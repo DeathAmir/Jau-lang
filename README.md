@@ -1,77 +1,53 @@
 <div align="center">
 
-<img src="https://dummyimage.com/1200x280/0f172a/ffffff&text=Jau+Programming+Language"/>
+<img src="https://capsule-render.vercel.app/content?type=soft&fontColor=ffffff&text=Jau%20Language&height=280&color=0f172a" width="100%"/>
 
-<h3>You break it, Jau fixes it.</h3>
+### 🚀 "You break it, **Jau** fixes it. Because life's too short for segfaults."
 
-<img src="https://img.shields.io/badge/version-0.1.0-blue">
-<img src="https://img.shields.io/badge/runtime-JUR-orange">
-<img src="https://img.shields.io/badge/platform-cross--platform-green">
-<img src="https://img.shields.io/badge/status-experimental-red">
-<img src="https://img.shields.io/badge/license-MIT-purple">
+[![Version](https://img.shields.io/badge/version-0.1.0-blue?style=for-the-badge&logo=semver)](https://github.com/DeathAmir/Jau)
+[![Runtime](https://img.shields.io/badge/runtime-JUR-orange?style=for-the-badge&logo=webassembly)](https://github.com/DeathAmir/Jau)
+[![Platform](https://img.shields.io/badge/platform-cross--platform-green?style=for-the-badge&logo=linux)](https://github.com/DeathAmir/Jau)
+[![Status](https://img.shields.io/badge/status-experimental-red?style=for-the-badge&logo=airplay)](https://github.com/DeathAmir/Jau)
+[![License](https://img.shields.io/badge/license-MIT-purple?style=for-the-badge&logo=opensourceinitiative)](LICENSE)
 
-<br><br>
+<br>
 
-<a href="#english">
-<img src="https://cdn.jsdelivr.net/gh/lipis/flag-icons/flags/4x3/us.svg" width="22"> English
-</a>
-&nbsp;&nbsp;&nbsp;
-<a href="#persian">
-<img src="https://cdn.jsdelivr.net/gh/lipis/flag-icons/flags/4x3/ir.svg" width="22"> فارسی
-</a>
-
-</div>
+[**English Documentation**](#english) • [**مستندات فارسی**](#persian)
 
 ---
 
-<a id="english"></a>
+<div id="english">
 
-# Jau Programming Language
+## 🌟 Why Jau?
 
-<img src="https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/code.svg" width="18"/> **Jau** is a modern programming language built for performance, simplicity and developer productivity.
+**Jau** isn't just another language; it's a statement. Built for performance without the headache, it brings low-level power to high-level dreamers.
 
----
-
-# Core Principles
-
-<img src="https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/lightning.svg" width="18"/> Performance  
-<img src="https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/opensourceinitiative.svg" width="18"/> Open Ecosystem  
-<img src="https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/linux.svg" width="18"/> Cross Platform  
-<img src="https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/assemblyscript.svg" width="18"/> Low Level Capability  
+### ✨ Key Strengths
+- ⚡ **Blazing Fast:** Compiles before you can finish your coffee.
+- 🛡️ **JUR Runtime:** A fortress for your code execution.
+- 🧩 **Modular:** Everything is a package, everything is simple.
+- 💻 **Hardware Near:** Touch the metal without getting burned.
 
 ---
 
-# Architecture
+### 🏗️ Architecture Flow
 
-```
-Jau Source Code
-        ↓
-   Jau Compiler
-        ↓
-   Jau Bytecode
-        ↓
-   JUR Runtime
-        ↓
-   Operating System
+```mermaid
+graph TD
+    A[Jau Source .jau] --> B{Jau Compiler}
+    B --> C[Jau Bytecode .jbc]
+    C --> D[JUR Runtime]
+    D --> E[Operating System]
+    style B fill:#3b82f6,stroke:#fff,stroke-width:2px
+    style D fill:#f97316,stroke:#fff,stroke-width:2px
 ```
 
 ---
 
-# Syntax
+### ⌨️ Syntax Showcase
 
-### Hello World
-
-```
-^This Is A Simple Code^
-
-name = "World"
-
-print("Hello " + name)
-```
-
-### Variables
-
-```
+#### 🧬 Variables & Printing
+```rust
 ^Variables^
 
 user = "DeathAmir"
@@ -81,185 +57,93 @@ print(user)
 print(age)
 ```
 
-### Functions
-
-```
+#### 🛠️ Functions & Logic
+```rust
 ^Function^
 
 func greet(name) {
-    print("Hello " + name)
+    if name == "Jau" {
+        print("Hello, Master!")
+    } else {
+        print("Hello " + name)
+    }
 }
 
 greet("Jau")
 ```
 
-### Conditions
+---
 
-```
-^Condition^
+### 📊 Benchmarks (Real Talk)
 
-age = 18
-
-if age >= 18 {
-    print("Access Granted")
-} else {
-    print("Access Denied")
-}
-```
-
-### Loops
-
-```
-^Loop^
-
-for i in 0..5 {
-    print(i)
-}
-```
+| Feature | Jau | Python | Go | C++ |
+| :--- | :---: | :---: | :---: | :---: |
+| **Simplicity** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐ |
+| **Execution** | 🚀 High | 🐢 Medium | 🚀 High | 🔥 Ultra |
+| **Dev Joy** | 😍 Infinite | 😊 High | 😐 Medium | 💀 Pain |
 
 ---
 
-# Language Capabilities
+### 🛠️ The Toolchain
 
-| Capability | Description |
-|-------------|-------------|
-| Fast Compiler | Lightweight compilation |
-| JUR Runtime | Secure runtime environment |
-| Memory Management | Automatic memory handling |
-| Modular Packages | Package ecosystem |
-| CLI Tools | Powerful command line tooling |
-| Toolchain | Integrated compiler and runtime |
-| Cross Platform | Windows Linux macOS |
+| Command | Action |
+| :--- | :--- |
+| `jauc` | The brain that transforms code. |
+| `jur` | The engine that runs the world. |
+| `jaupm` | Because sharing is caring. |
+| `jaufmt` | Keeps your code looking sexy. |
 
----
-
-# Toolchain
-
-| Tool | Description |
-|------|-------------|
-| jauc | Compiler |
-| jur | Runtime |
-| jaupm | Package manager |
-| jaudoc | Documentation generator |
-| jaufmt | Code formatter |
-| jautest | Testing tool |
+</div>
 
 ---
 
-# CLI
+<div id="persian" dir="rtl">
 
-```
+## 🇮🇷 زبان برنامه‌نویسی Jau
+
+**جاو (Jau)** برای کسایی ساخته شده که از پیچیدگی‌های بیخود خسته‌ن. سرعت سی‌پلاس‌پلاس رو می‌خوای ولی حوصله کار با حافظه رو نداری؟ جاو اینجاست.
+
+### 💎 ویژگی‌های کلیدی
+- ⚡ **کامپایلر موشک:** کدت رو تو کسری از ثانیه زنده می‌کنه.
+- 🔒 **امنیت بالا:** با ران‌تایم اختصاصی JUR، خیالت از بابت کرش کردن راحته.
+- 🌍 **مولتی پلتفرم:** یک‌بار بنویس، همه‌جا اجرا کن (ویندوز، لینوکس، مک).
+
+---
+
+### 🛠️ ابزارهای خط فرمان
+
+```bash
+# کامپایل کردن پروژه
 jauc main.jau
+
+# اجرا روی ران‌تایم JUR
 jur main.jbc
-```
 
----
-
-# Package Manager
-
-```
+# نصب پکیج‌های جدید
 jaupm install http
-jaupm install database
-jaupm update
 ```
 
 ---
 
-# Project Structure
+### 📅 نقشه راه (Roadmap)
 
-```
-project
- ├ src
- │  └ main.jau
- ├ jau.mod
- └ README.md
-```
+- [x] هسته اصلی کامپایلر (v0.1.0)
+- [x] ران‌تایم JUR
+- [ ] پکیج منیجر ابری
+- [ ] پشتیبانی از WebAssembly
+- [ ] پلاگین اختصاصی VS Code
 
 ---
 
-# Platform Support
+### 👤 توسعه‌دهنده
+توسط **DeathAmir** با عشق برای جامعه متن‌باز.
 
-| Platform | Status |
-|-----------|--------|
-| Windows | Supported |
-| Linux | Supported |
-| macOS | Supported |
+</div>
 
----
+<br>
 
-# Performance Comparison
-
-| Language | Compile Speed | Runtime Speed | Learning Curve |
-|----------|---------------|---------------|----------------|
-| Jau | Fast | High | Easy |
-| Python | None | Medium | Easy |
-| Go | Fast | High | Medium |
-| C++ | Slow | Very High | Hard |
+<div align="center">
+<img src="https://capsule-render.vercel.app/content?type=waving&color=0f172a&height=100&section=footer" width="100%"/>
+</div>
 
 ---
-
-# Ecosystem
-
-| Component | Status |
-|-----------|--------|
-| Standard Library | In Progress |
-| Package Registry | Planned |
-| Language Server | Planned |
-| IDE Plugins | Planned |
-| WebAssembly Target | Planned |
-
----
-
-# Language Information
-
-| Property | Value |
-|----------|------|
-| Language Type | Compiled |
-| Runtime | JUR |
-| First Release | 2026 |
-| Author | DeathAmir |
-| License | MIT |
-
----
-
-<a id="persian"></a>
-
-# زبان برنامه نویسی Jau
-
-<img src="https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/code.svg" width="18"/>  
-Jau یک زبان برنامه نویسی مدرن است که برای سرعت، سادگی و بهره‌وری توسعه‌دهندگان طراحی شده است.
-
----
-
-# معماری
-
-```
-کد Jau
-   ↓
-کامپایلر
-   ↓
-بایت کد
-   ↓
-JUR
-   ↓
-سیستم عامل
-```
-
----
-
-# ویژگی ها
-
-| ویژگی | توضیح |
-|------|------|
-| سینتکس ساده | خوانایی بالا |
-| سرعت بالا | کامپایل سریع |
-| Runtime اختصاصی | JUR |
-| چند سکویی | ویندوز لینوکس مک |
-
----
-
-# لایسنس
-
-MIT License
-
-Copyright (c) 2026 DeathAmir
