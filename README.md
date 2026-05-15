@@ -1,192 +1,287 @@
+
 <div align="center">
 
-<img src="https://capsule-render.vercel.app/api?type=waving&height=300&color=0f172a&text=Jau%20Language&fontColor=ffffff&fontSize=60&animation=fadeIn" width="100%"/>
-
-<!-- New Jau Logo -->
-<svg width="120" height="120" viewBox="0 0 120 120">
-  <defs>
-    <linearGradient id="jauGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#4F46E5;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#7C3AED;stop-opacity:1" />
-    </linearGradient>
-  </defs>
-  <path d="M60 20 L90 60 L60 100 L30 60 Z" fill="url(#jauGradient)" stroke="#0f172a" stroke-width="3"/>
-  <text x="60" y="65" text-anchor="middle" fill="white" font-size="24" font-weight="bold">J</text>
+<!-- Custom SVG Logo JAU -->
+<svg width="160" height="160" viewBox="0 0 160 160" fill="none" xmlns="http://www.w3.org/2000/svg" style="margin-bottom: 15px;">
+  <circle cx="80" cy="80" r="78" stroke="#4895ef" stroke-width="4"/>
+  <path d="M40 120C60 80 80 80 100 120" stroke="#4895ef" stroke-width="6" stroke-linecap="round" />
+  <path d="M60 40L80 80L100 40" stroke="#4895ef" stroke-width="6" stroke-linejoin="round" />
+  <circle cx="80" cy="80" r="10" fill="#4895ef"/>
 </svg>
 
-<h1>Jau Programming Language</h1>
-<h3>You break it. <b>Jau</b> fixes it.</h3>
+<img src="https://capsule-render.vercel.app/api?type=waving&height=280&color=0f172a&text=Jau%20Language&fontColor=4895ef&fontSize=72&animation=fadeIn" width="100%"/>
+
+<h1 style="font-weight: 900; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; letter-spacing: 0.06em; color: #4895ef;">⚡ Jau Programming Language</h1>
+
+<h3 style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">You break it. <b style="color:#4895ef;">Jau</b> fixes it.</h3>
 
 <br>
 
-<div>
-  <img src="https://svg.shields.io/badge/version-0.1.0-blue?logo=semver&logoColor=white">
-  <img src="https://svg.shields.io/badge/runtime-JUR-orange">
-  <img src="https://svg.shields.io/badge/platform-cross--platform-green">
-  <img src="https://svg.shields.io/badge/status-experimental-red">
+<div style="display:flex; justify-content:center; gap:10px; flex-wrap:wrap;">
+  <a href="https://github.com/DeathAmir/Jau-lang/stargazers" target="_blank" style="text-decoration:none;">
+    <svg height="28" width="120" viewBox="0 0 150 40" fill="#f9cc1b" xmlns="http://www.w3.org/2000/svg">
+      <rect width="150" height="40" rx="6" fill="#1e293b"/>
+      <text x="15" y="27" font-family="Segoe UI" font-weight="700" font-size="18" fill="#f9cc1b">⭐ Stars</text>
+      <path d="M120 10v20l15-10-15-10z" fill="#f9cc1b"/>
+    </svg>
+  </a>
+  <a href="https://github.com/DeathAmir/Jau-lang/network/members" target="_blank" style="text-decoration:none;">
+    <svg height="28" width="130" viewBox="0 0 160 40" fill="#f97316" xmlns="http://www.w3.org/2000/svg">
+      <rect width="160" height="40" rx="6" fill="#1e293b"/>
+      <text x="15" y="27" font-family="Segoe UI" font-weight="700" font-size="18" fill="#f97316">🍴 Forks</text>
+      <path d="M130 12h16v16h-16v-16z" fill="#f97316"/>
+    </svg>
+  </a>
+  <a href="https://github.com/DeathAmir/Jau-lang/issues" target="_blank" style="text-decoration:none;">
+    <svg height="28" width="140" viewBox="0 0 160 40" fill="#ef4444" xmlns="http://www.w3.org/2000/svg">
+      <rect width="160" height="40" rx="6" fill="#1e293b"/>
+      <text x="15" y="27" font-family="Segoe UI" font-weight="700" font-size="18" fill="#ef4444">📌 Issues</text>
+      <circle cx="130" cy="20" r="10" stroke="#ef4444" stroke-width="2" fill="none"/>
+    </svg>
+  </a>
+  <a href="https://github.com/DeathAmir/Jau-lang/blob/main/LICENSE" target="_blank" style="text-decoration:none;">
+    <svg height="28" width="150" viewBox="0 0 160 40" fill="#a78bfa" xmlns="http://www.w3.org/2000/svg">
+      <rect width="160" height="40" rx="6" fill="#1e293b"/>
+      <text x="15" y="27" font-family="Segoe UI" font-weight="700" font-size="18" fill="#a78bfa">📜 License</text>
+      <path d="M130 15l15 5-15 5v-10z" fill="#a78bfa"/>
+    </svg>
+  </a>
 </div>
 
 <br>
 
-<div>
-  <img src="https://svg.shields.io/github/stars/DeathAmir/Jau?color=yellow">
-  <img src="https://svg.shields.io/github/forks/DeathAmir/Jau?color=orange">
-  <img src="https://svg.shields.io/github/issues/DeathAmir/Jau?color=red">
-  <img src="https://svg.shields.io/github/license/DeathAmir/Jau?color=purple">
+<div style="display:flex; justify-content:center; gap:12px; flex-wrap:wrap;">
+  <div style="background:#2563eb; border-radius:10px; padding:5px 15px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-weight:600; color:#fff; box-shadow: 0 0 6px #2563eb;">version 0.1.0</div>
+  <div style="background:#f97316; border-radius:10px; padding:5px 15px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-weight:600; color:#fff; box-shadow: 0 0 6px #f97316;">runtime: JUR</div>
+  <div style="background:#22c55e; border-radius:10px; padding:5px 15px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-weight:600; color:#fff; box-shadow: 0 0 6px #22c55e;">platform: cross-platform</div>
+  <div style="background:#ef4444; border-radius:10px; padding:5px 15px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-weight:600; color:#fff; box-shadow: 0 0 6px #ef4444;">status: experimental</div>
 </div>
 
 <br><br>
 
-<svg width="400" height="60" viewBox="0 0 400 60">
-  <image href="https://skillicons.dev/icons?i=linux" x="0" height="45"/>
-  <image href="https://skillicons.dev/icons?i=windows" x="60" height="45"/>
-  <image href="https://skillicons.dev/icons?i=macos" x="120" height="45"/>
-  <image href="https://skillicons.dev/icons?i=android" x="180" height="45"/>
-  <image href="https://skillicons.dev/icons?i=ios" x="240" height="45"/>
-  <image href="https://skillicons.dev/icons?i=wasm" x="300" height="45"/>
-</svg>
+<a href="#english" style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-weight:600; color:#4895ef; text-decoration:none;">🇬🇧 English</a>
 
+<br><br>
+
+<div style="display:flex; justify-content:center; gap:18px; margin-bottom: 35px;">
+  <img src="https://skillicons.dev/icons?i=cpp,go,python,rust,linux,vscode,git" height="42" alt="Platforms icons"/>
 </div>
 
 ---
 
-<div align="center">
+<div align="center" style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-weight:700; font-size:28px; margin-bottom: 25px;">
+  ⚙️ Jau Identity
+</div>
 
-<h1>⚙️ Jau Identity</h1>
-
-<svg width="200" height="100" viewBox="0 0 200 100">
-  <path d="M40 20 L80 20 L120 60 L80 100 L40 100 L0 60 Z" fill="#0f172a" stroke="#7C3AED" stroke-width="2"/>
-  <text x="60" y="60" text-anchor="middle" fill="white" font-size="24" font-weight="bold">J</text>
-</svg>
-
+<div align="center" style="font-family: 'Source Code Pro', monospace; font-weight:700; white-space: pre; font-size: 24px; color:#4895ef; letter-spacing:4px; line-height: 24px;">
+      ██╗ █████╗ ██╗   ██╗ <br>
+      ██║██╔══██╗██║   ██║ <br>
+      ██║███████║██║   ██║ <br>
+ ██   ██║██╔══██║██║   ██║ <br>
+ ╚█████╔╝██║  ██║╚██████╔╝ <br>
+  ╚════╝ ╚═╝  ╚═╝ ╚═════╝
 </div>
 
 ---
 
 # English
 
-## What is Jau
+## 🚀 What is Jau
+
 Jau is a modern experimental programming language focused on **speed**, **simplicity**, and **hardware‑level performance** without the painful complexity of traditional low‑level languages.
 
----
-
-## Key Features
-<div>
-  <svg width="300" height="300" viewBox="0 0 300 300">
-    <circle cx="150" cy="150" r="140" fill="#0f172a" stroke="#7C3AED" stroke-width="2"/>
-    <text x="150" y="100" text-anchor="middle" fill="white" font-size="20">🚀 Ultra Fast Compilation</text>
-    <text x="150" y="140" text-anchor="middle" fill="white" font-size="20">🧠 Simple Clean Syntax</text>
-    <text x="150" y="180" text-anchor="middle" fill="white" font-size="20">🔒 Safe Runtime (JUR)</text>
-    <text x="150" y="220" text-anchor="middle" fill="white" font-size="20">📦 Modular Package System</text>
-  </svg>
-</div>
+Designed for developers who want **power without suffering**.
 
 ---
 
-## Architecture
+## ⚡ Key Features
+
+<ul style="list-style:none; padding-left:0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-weight:600; color:#27272a;">
+<li style="margin-bottom: 12px;">🚀 <b>Ultra Fast Compilation</b></li>
+<li style="margin-bottom: 12px;">🧠 <b>Simple Clean Syntax</b></li>
+<li style="margin-bottom: 12px;">🔒 <b>Safe Runtime (JUR)</b></li>
+<li style="margin-bottom: 12px;">📦 <b>Modular Package System with Dependency Resolver</b></li>
+<li style="margin-bottom: 12px;">🌍 <b>Cross Platform Execution & WebAssembly Target</b></li>
+<li style="margin-bottom: 12px;">⚙️ <b>Hardware‑Near Performance with Inline Assembly</b></li>
+<li style="margin-bottom: 12px;">🔌 <b>Extensible Architecture & Plugin Support</b></li>
+<li style="margin-bottom: 12px;">🛟 <b>Advanced Error Diagnostics and Debugger Integration</b></li>
+<li>☁️ <b>Cloud Package Distribution via JauPM</b></li>
+</ul>
+
+---
+
+## 🧠 Architecture
+
 ```mermaid
-graph LR
+graph TD
 A[Jau Source .jau] --> B[Jau Compiler]
 B --> C[Jau Bytecode .jbc]
-C --> D[JUR Runtime]
-D --> E[Native Execution]
+C --> D[JUR Runtime & Debugger]
+D --> E[Operating System & Hardware]
+```
 
 ---
 
-## Example Code
-rust
-func quantumSort(arr) {
-  if arr.length <= 1 return arr
-  pivot = arr[0]
-  left = quantumFilter(arr[1:], x => x < pivot)
-  right = quantumFilter(arr[1:], x => x >= pivot)
-  return quantumSort(left) + [pivot] + quantumSort(right)
+## 🧪 Example Code
+
+### Variables
+
+```rust
+^Variables^
+
+name = "DeathAmir"
+age = 20
+
+print(name)
+print(age)
+```
+
+### Functions
+
+```rust
+^Function^
+
+func greet(name) {
+    if name == "Jau" {
+        print("Hello Master")
+    } else {
+        print("Hello " + name)
+    }
 }
 
+greet("Jau")
+```
+
 ---
 
-## Toolchain
-<div>
-  <svg width="500" height="100" viewBox="0 0 500 100">
-<rect x="0" y="0" width="120" height="40" fill="#4F46E5" rx="5"/>
-<text x="60" y="25" text-anchor="middle" fill="white">jauc</text>
+## 🛠 Toolchain
 
-<rect x="130" y="0" width="120" height="40" fill="#7C3AED" rx="5"/>
-<text x="190" y="25" text-anchor="middle" fill="white">jur</text>
+<table style="width:100%; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; border-collapse: collapse;">
+  <thead>
+    <tr style="background:#e0e7ff; text-align:left;">
+      <th style="padding: 10px; border: 1px solid #c7d2fe;">Tool</th>
+      <th style="padding: 10px; border: 1px solid #c7d2fe;">Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr style="border-bottom: 1px solid #c7d2fe;">
+      <td style="padding: 12px; border: 1px solid #c7d2fe;">jauc</td>
+      <td style="padding: 12px; border: 1px solid #c7d2fe;">Jau Compiler with incremental build and lightning speed</td>
+    </tr>
+    <tr style="border-bottom: 1px solid #c7d2fe;">
+      <td style="padding: 12px; border: 1px solid #c7d2fe;">jur</td>
+      <td style="padding: 12px; border: 1px solid #c7d2fe;">Jau Secure Runtime with hardware acceleration</td>
+    </tr>
+    <tr style="border-bottom: 1px solid #c7d2fe;">
+      <td style="padding: 12px; border: 1px solid #c7d2fe;">jaupm</td>
+      <td style="padding: 12px; border: 1px solid #c7d2fe;">Modular Package Manager supporting cloud repositories</td>
+    </tr>
+    <tr style="border-bottom: 1px solid #c7d2fe;">
+      <td style="padding: 12px; border: 1px solid #c7d2fe;">jaufmt</td>
+      <td style="padding: 12px; border: 1px solid #c7d2fe;">Code Formatter with style guidelines and lint checks</td>
+    </tr>
+  </tbody>
+</table>
 
-<rect x="260" y="0" width="120" height="40" fill="#4F46E5" rx="5"/>
-<text x="320" y="25" text-anchor="middle" fill="white">jaupm</text>
+---
 
-<rect x="390" y="0" width="120" height="40" fill="#7C3AED" rx="5"/>
-<text x="450" y="25" text-anchor="middle" fill="white">jaufmt</text>
-  </svg>
+## 📊 Performance Vision
+
+<table style="width:100%; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; border-collapse: collapse; text-align:center;">
+  <thead>
+    <tr style="background:#c7d2fe;">
+      <th style="padding: 14px; border:1px solid #a5b4fc;">Language</th>
+      <th style="padding: 14px; border:1px solid #a5b4fc;">Simplicity</th>
+      <th style="padding: 14px; border:1px solid #a5b4fc;">Speed</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr style="border: 1px solid #a5b4fc; font-weight:bold;">
+      <td style="padding: 14px;">Jau</td>
+      <td style="color:#2563eb;">★★★★★</td>
+      <td style="color:#2563eb; font-size: 20px;">🚀🚀🚀</td>
+    </tr>
+    <tr style="border: 1px solid #a5b4fc;">
+      <td>Python</td>
+      <td>★★★★★</td>
+      <td>🐢</td>
+    </tr>
+    <tr style="border: 1px solid #a5b4fc;">
+      <td>Go</td>
+      <td>★★★</td>
+      <td>🚀</td>
+    </tr>
+    <tr style="border: 1px solid #a5b4fc;">
+      <td>C++</td>
+      <td>★</td>
+      <td>🔥🔥</td>
+    </tr>
+  </tbody>
+</table>
+
+---
+
+## 📦 Installation
+
+```bash
+git clone https://github.com/DeathAmir/Jau-lang
+
+cd Jau-lang
+
+make build
+```
+
+---
+
+## ▶ Run
+
+```bash
+jauc main.jau
+jur main.jbc
+```
+
+---
+
+## 📅 Roadmap
+
+<ul style="list-style: none; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-weight: 600; color:#27272a;">
+  <li style="margin-bottom: 8px;">✅ Core Compiler</li>
+  <li style="margin-bottom: 8px;">✅ JUR Runtime</li>
+  <li style="margin-bottom: 8px;">⏳ Cloud Package Manager</li>
+  <li style="margin-bottom: 8px;">⏳ WebAssembly Target</li>
+  <li style="margin-bottom: 8px;">⏳ VSCode Extension</li>
+  <li style="margin-bottom: 8px;">⏳ Jau Standard Library</li>
+  <li style="margin-bottom: 8px;">⏳ Jau Debugger</li>
+</ul>
+
+---
+
+## 🌐 Ecosystem
+
+<ul style="list-style:none; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-weight:600; color:#27272a;">
+  <li>JUR Runtime & Debugger</li>
+  <li>JauPM Package Manager & Cloud</li>
+  <li>Jau Standard Library</li>
+  <li>Jau Formatter & Lint</li>
+  <li>Jau Language Server & VSCode Plugin</li>
+</ul>
+
+---
+
+## 🤝 Contributing
+
+Pull requests are welcome.
+
+If you want to build the future of programming with <b style="color:#4895ef;">Jau</b>, join the project.
+
+---
+
+<div align="center" style="margin-top: 50px; padding: 20px; border: 2px solid #4895ef; border-radius: 12px; max-width: 320px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-weight: 700; color:#4895ef; letter-spacing: 1.1px;">
+  © 2026 DeathAmir
+  <br>
+  <a href="https://github.com/deathamir" target="_blank" style="color:#4895ef; text-decoration:none;">GitHub Profile</a>
 </div>
 
----
-
-## Performance Vision
-mermaid
-pie
-  title Performance Comparison
-  "Jau" : 45
-  "C++" : 30
-  "Rust" : 20
-  "Go" : 5
-
----
-
-## Installation
-bash
-curl -sSf https://jau-lang.org/install.sh | sh
-
----
-
-## Roadmap
-<svg width="600" height="200" viewBox="0 0 600 200">
-  <line x1="50" y1="100" x2="550" y2="100" stroke="#4F46E5" stroke-width="3"/>
-  
-  <circle cx="50" cy="100" r="10" fill="#7C3AED"/>
-  <text x="50" y="140" text-anchor="middle">Compiler</text>
-  
-  <circle cx="150" cy="100" r="10" fill="#7C3AED"/>
-  <text x="150" y="140" text-anchor="middle">Runtime</text>
-  
-  <circle cx="250" cy="100" r="10" fill="#4F46E5"/>
-  <text x="250" y="140" text-anchor="middle">Wasm</text>
-  
-  <circle cx="350" cy="100" r="10" fill="#4F46E5"/>
-  <text x="350" y="140" text-anchor="middle">Cloud</text>
-  
-  <circle cx="450" cy="100" r="10" fill="#4F46E5"/>
-  <text x="450" y="140" text-anchor="middle">Debugger</text>
-  
-  <circle cx="550" cy="100" r="10" fill="#4F46E5"/>
-  <text x="550" y="140" text-anchor="middle">LSP</text>
-</svg>
-
----
-
-## Ecosystem
-<div>
-  <svg width="400" height="200" viewBox="0 0 400 200">
-<circle cx="200" cy="100" r="80" fill="#0f172a" stroke="#7C3AED" stroke-width="2"/>
-<text x="200" y="70" text-anchor="middle" fill="white">JUR Runtime</text>
-<text x="200" y="100" text-anchor="middle" fill="white">JauPM</text>
-<text x="200" y="130" text-anchor="middle" fill="white">Standard Library</text>
-  </svg>
-</div>
-
----
-
-<div align="center">
-
-<svg width="300" height="80" viewBox="0 0 300 80">
-  <rect width="300" height="80" fill="#0f172a" rx="10"/>
-  <text x="150" y="40" text-anchor="middle" fill="white" font-size="20">Copyright © DeathAmir 2026</text>
-</svg>
-
-<br><br>
-
-<img src="https://capsule-render.vercel.app/api?type=waving&height=120&color=0f172a&section=footer"/>
+<br>
 
 </div>
