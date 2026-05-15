@@ -1,195 +1,190 @@
 <div align="center">
 
-<img src="https://capsule-render.vercel.app/api?type=waving&height=320&color=0f172a&text=Jau%20Language&fontColor=ffffff&fontSize=70&animation=fadeIn&fontAlignY=35" width="100%"/>
+<img src="https://capsule-render.vercel.app/api?type=waving&height=300&color=0f172a&text=Jau%20Language&fontColor=ffffff&fontSize=70&animation=fadeIn" width="100%"/>
 
-<h1><img src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Objects/Zap.png" width="40"> Jau Programming Language</h1>
+<img src="https://raw.githubusercontent.com/DeathAmir/Jau/main/assets/jau-logo.png" width="180" onerror="this.src='https://cdn-icons-png.flaticon.com/512/5968/5968322.png'" style="filter: drop-shadow(0px 0px 20px #fbbf24); margin-bottom: 20px;">
 
-<h3>"You break it. <b>Jau</b> fixes it."</h3>
+<h1>⚡ The Jau Programming Language</h1>
 
-<p align="center">
-  <img src="https://img.shields.io/github/stars/DeathAmir/Jau?style=for-the-badge&logo=github&color=FFD700&labelColor=1e293b">
-  <img src="https://img.shields.io/github/forks/DeathAmir/Jau?style=for-the-badge&logo=git&color=orange&labelColor=1e293b">
-  <img src="https://img.shields.io/github/issues/DeathAmir/Jau?style=for-the-badge&logo=github-actions&color=ef4444&labelColor=1e293b">
-  <img src="https://img.shields.io/github/license/DeathAmir/Jau?style=for-the-badge&logo=balance-scale&color=a855f7&labelColor=1e293b">
-  <img src="https://img.shields.io/github/repo-size/DeathAmir/Jau?style=for-the-badge&logo=database&color=10b981&labelColor=1e293b">
-</p>
+<h3><i>"You break it. <b>Jau</b> heals it."</i></h3>
+
+<p>A high-performance, memory-safe language designed for the next generation of systems engineering.</p>
 
 <br>
 
-<p align="center">
-  <img src="https://img.shields.io/badge/version-0.1.0-3b82f6?style=flat-square&logo=semver">
-  <img src="https://img.shields.io/badge/runtime-JUR-f59e0b?style=flat-square&logo=engine">
-  <img src="https://img.shields.io/badge/platform-cross--platform-10b981?style=flat-square&logo=target">
-  <img src="https://img.shields.io/badge/status-experimental-ef4444?style=flat-square&logo=test-run">
-</p>
+[![Stars](https://img.shields.io/github/stars/DeathAmir/jau-lang?style=for-the-badge&color=fbbf24&logo=github)](https://github.com/DeathAmir/jau-lang)
+[![Forks](https://img.shields.io/github/forks/DeathAmir/jau-lang?style=for-the-badge&color=f59e0b&logo=git)](https://github.com/DeathAmir/jau-lang)
+[![Issues](https://img.shields.io/github/issues/DeathAmir/jau-lang?style=for-the-badge&color=ef4444&logo=githubactions)](https://github.com/DeathAmir/jau-lang/issues)
+[![License](https://img.shields.io/github/license/DeathAmir/jau-lang?style=for-the-badge&color=8b5cf6&logo=openedu)](https://github.com/DeathAmir/jau-lang/blob/main/LICENSE)
 
 <br>
 
-<a href="#english">🇬🇧 English</a> • <a href="#persian">🇮🇷 فارسی</a>
+<img src="https://img.shields.io/badge/version-0.1.0-3b82f6?style=for-the-badge&logo=semver">
+<img src="https://img.shields.io/badge/runtime-JUR_v1-f97316?style=for-the-badge&logo=target">
+<img src="https://img.shields.io/badge/platform-Cross_Platform-10b981?style=for-the-badge&logo=linux">
+<img src="https://img.shields.io/badge/status-Bleeding_Edge-dc2626?style=for-the-badge&logo=hotjar">
 
 <br><br>
 
-<img src="https://skillicons.dev/icons?i=cpp,go,python,rust,linux,vscode,git,docker,wasm,githubactions,cmake" height="50">
+<img src="https://skillicons.dev/icons?i=cpp,go,python,rust,zig,linux,vscode,git,github,docker,cmake" height="50">
 
 </div>
 
 ---
 
-<div align="center">
+## 💎 The Jau Philosophy
 
-# 🛠️ System Architecture
+Jau is not just another syntax; it’s a hardware-obsessed ecosystem built to eliminate the bridge between **Developer Happiness** and **Machine Efficiency**.
+
+- **Zero-Cost Abstractions:** High-level code, low-level execution.
+- **The JUR Engine:** A custom-built Virtual Machine optimized for instant startup and predictive execution.
+- **Safety by Default:** Integrated memory protection without a heavy Garbage Collector.
+
+---
+
+## ⚡ Technical Superpowers
+
+| Feature | Description |
+| :--- | :--- |
+| **🚀 Warp Speed** | Jauc leverages LLVM-style optimizations for lightning-fast binary generation. |
+| **🧠 Cognitive Syntax** | Designed to be read by humans, but executed by gods. |
+| **🔒 JUR Isolation** | The Jau Runtime ensures no rogue memory access can crash your host system. |
+| **📦 JauPM** | Native dependency resolution with zero-config overhead. |
+| **📡 Hot Reloading** | Modify system-level logic without restarting the runtime. |
+
+---
+
+## 🧬 Architecture Flow
 
 ```mermaid
 graph LR
     subgraph Frontend
-    A[".jau Source"] --> B["Lexer/Parser"]
-    B --> C["AST Generation"]
+    A[Jau Source .jau] --> B{Jauc Compiler}
     end
-    
-    subgraph Optimizer
-    C --> D["Semantic Analysis"]
-    D --> E["J-Optimizer"]
+    subgraph Middle
+    B --> C[Optimization Pass]
+    C --> D[Jau Bytecode .jbc]
     end
-    
     subgraph Backend
-    E --> F["JBC Bytecode (.jbc)"]
-    F --> G["JUR VM Runtime"]
-    G --> H["Hardware Abstraction"]
+    D --> E[JUR Runtime Engine]
+    E --> F[Native Machine Code]
+    F --> G((Hardware))
     end
-    
-    style G fill:#f96,stroke:#333,stroke-width:4px
+    style B fill:#fbbf24,stroke:#000,stroke-width:2px
+    style E fill:#f97316,stroke:#000,stroke-width:2px
+    style G fill:#10b981,stroke:#000,stroke-width:4px
 ```
 
-</div>
-
 ---
 
-# English
+## 🧪 Experience Jau
 
-## 🚀 The Vision
-
-Jau is not just another language; it's a high-performance **Experimental Ecosystem**. It bridges the gap between Python's developer experience and C++'s raw power. No garbage collector overhead, just pure logic and the **JUR (Jau Universal Runtime)**.
-
----
-
-## 💎 Elite Features
-
-- **⚡ Blazing Compilation:** Powered by a parallelized multi-stage compiler.
-- **🛡️ Memory Safety:** Ownership-inspired memory management without the "Borrow Checker" headache.
-- **🧬 Native Interop:** Call C/C++ functions directly without boilerplate.
-- **📦 JauPM:** A decentralized, lightning-fast package manager.
-- **🌐 WASM Ready:** Compile your logic to the web with one flag.
-- **🧩 Hot Reloading:** Modify JUR bytecode on the fly.
-
----
-
-## 🧪 Code Showcase
-
-### Advanced Types & Control Flow
+### Functional Prowess
 ```rust
-^ Types & Pattern ^
+^ Function Definition ^
 
-const VERSION = 1.0
-mut status = "active"
-
-func check(val) {
-    match val {
-        "Jau" => print("Native Speed Detected")
-        _     => print("General Context")
+func calculate_power(base, exp) {
+    match exp {
+        0 => return 1,
+        _ => return base * calculate_power(base, exp - 1)
     }
 }
 
-check("Jau")
+let result = calculate_power(2, 8)
+print("Result: " + result) // Result: 256
 ```
 
-### High-Level Performance
+### System Interaction
 ```rust
-^ Concurrent Logic ^
+^ Memory Safety & Pointers ^
 
-spawn func heavy_task(id) {
-    print("Task " + id + " running on JUR core")
-}
-
-for i in 0..10 {
-    heavy_task(i)
+func handle_stream(data*) {
+    if data.is_valid() {
+        print(data.read_buffer())
+    } else {
+        panic("Memory violation prevented by JUR")
+    }
 }
 ```
 
 ---
 
-## 📊 Benchmarks (Projected)
+## 🛠 Pro Toolchain
 
-| Metric | Python | Go | C++ | **Jau** |
+| Command | Tool | Responsibility |
+|:---|:---|:---|
+| `jauc` | **The Architect** | Compiles source into optimized JBC bytecode. |
+| `jur` | **The Executor** | High-performance runtime environment. |
+| `jaupm` | **The Courier** | Lightning-fast package and dependency manager. |
+| `jaufmt` | **The Artist** | Opinionated code formatter for ultimate readability. |
+| `jaudbg` | **The Seer** | Real-time memory and state debugger. |
+
+---
+
+## 📊 Benchmark Vision
+
+<div align="center">
+
+| Metric | Jau | Rust | Go | Python |
 | :--- | :---: | :---: | :---: | :---: |
-| **Startup Time** | 🐢 Slow | 🚀 Fast | 🔥 Instant | **🚀 Fast** |
-| **Memory Footprint** | 🐘 Large | 🐕 Medium | 🐜 Small | **🐜 Small** |
-| **Development Speed** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐ | **⭐⭐⭐⭐⭐** |
-| **Safety** | 🛡️ | 🛡️🛡️ | 💀 | **🛡️🛡️🛡️** |
-
----
-
-## 📅 Future Roadmap
-
-- [x] **Phase 1:** Core Grammar & Compiler Base
-- [x] **Phase 2:** JUR (Jau Universal Runtime) Implementation
-- [ ] **Phase 3:** JauPM Cloud Registry & Dependency Graph
-- [ ] **Phase 4:** LLVM Backend Integration
-- [ ] **Phase 5:** Jau-UI Framework for Native Desktop Apps
-- [ ] **Phase 6:** Standard Library (I/O, Crypto, Net)
-
----
-
-# Persian
-
-<div dir="rtl">
-
-## 🚀 چشم‌انداز Jau
-
-جاو فقط یک زبان نیست؛ یک **اکوسیستم آزمایشی** با کارایی بالاست. هدف ما پر کردن شکاف بین سادگی پایتون و قدرت بی حد و مرز C++ است. بدون سنگینی Garbage Collector، فقط منطق خالص و **رانتایم JUR**.
-
----
-
-## 💎 ویژگی‌های کلیدی
-
-- **⚡ کامپایل فوق‌سریع:** بهره‌گیری از معماری موازی در پردازش کدها.
-- **🛡️ امنیت حافظه:** مدیریت هوشمند حافظه بدون درگیری با مفاهیم پیچیده.
-- **🧬 ارتباط بومی:** فراخوانی مستقیم توابع C/C++ بدون اتلاف وقت.
-- **📦 مدیریت پکیج:** سیستم JauPM برای مدیریت وابستگی‌ها با سرعت نور.
-- **🌐 آماده برای وب:** قابلیت خروجی گرفتن مستقیم برای WebAssembly.
-
----
-
-## 🛠 ابزارهای توسعه
-
-| ابزار | نقش در سیستم | وضعیت |
-|:---:|:---:|:---:|
-| **jauc** | کامپایلر اصلی به بایت‌کد | ✅ پایدار |
-| **jur** | رانتایم اجرای بایت‌کد | ✅ پایدار |
-| **jaupm** | مدیریت بسته‌ها و کتابخانه‌ها | ⏳ در حال توسعه |
-| **jaufmt** | مرتب‌ساز هوشمند کد | ⏳ در حال توسعه |
-| **jauls** | پروتکل LSP برای VSCode | 📅 برنامه‌ریزی شده |
-
----
-
-## مشارکت در پروژه
-
-ما به دنبال توسعه‌دهندگانی هستیم که می‌خواهند آینده برنامه‌نویسی را تغییر دهند. اگر در زمینه کامپایلرها، رانتایم‌ها یا بهینه‌سازی کد تجربه دارید، Jau منتظر شماست.
+| **Syntax Simplicity** | 💎 💎 💎 💎 💎 | 💎 💎 | 💎 💎 💎 💎 | 💎 💎 💎 💎 💎 |
+| **Compilation Speed** | 🚀 🚀 🚀 🚀 | 🐢 | 🚀 🚀 🚀 | ⚡ (N/A) |
+| **Runtime Performance**| 🔥 🔥 🔥 🔥 | 🔥 🔥 🔥 🔥 🔥 | 🔥 🔥 🔥 | 🧊 |
+| **Memory Safety** | ✅ | ✅ | ✅ | ✅ |
 
 </div>
+
+---
+
+## 📦 Rapid Deployment
+
+```bash
+# Clone the core
+git clone https://github.com/DeathAmir/jau-lang.git
+
+# Enter the forge
+cd jau-lang
+
+# Build the ecosystem
+make install
+```
+
+### Quick Run
+```bash
+jauc example/hello.jau
+jur example/hello.jbc
+```
+
+---
+
+## 🗺 The Grand Vision
+
+- [x] **Phase 1:** Core Compiler & JUR Alpha
+- [x] **Phase 2:** Basic Pointers & Type Inference
+- [ ] **Phase 3:** JauPM Cloud Registry
+- [ ] **Phase 4:** WebAssembly (WASM) Target Support
+- [ ] **Phase 5:** LLVM Integration for Native Binaries
+- [ ] **Phase 6:** VSCode Language Server (LSP)
+
+---
+
+## 🤝 Join the Revolution
+
+Jau is open-source and always will be. We are looking for dreamers who want to redefine systems programming.
+
+1. **Fork** the repo.
+2. **Hack** the core.
+3. **Submit** a PR.
+4. **Ascend** to the contributor list.
 
 ---
 
 <div align="center">
 
-## 🌟 Support The Revolution
+### Built with ❤️ by DeathAmir
 
-If you like what we're building, give us a star! It keeps the JUR engines running.
-
-<img src="https://img.shields.io/github/stars/DeathAmir/Jau?style=social">
-
-<br>
-
-`Built with ❤️ by DeathAmir`
+[![Twitter](https://img.shields.io/badge/Twitter-1DA1F2?style=for-the-badge&logo=twitter&logoColor=white)](https://twitter.com/DeathAmir)
+[![Discord](https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/DeathAmir)
 
 <img src="https://capsule-render.vercel.app/api?type=waving&height=120&color=0f172a&section=footer"/>
 
