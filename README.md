@@ -1,34 +1,50 @@
+<div align="center">
+
+<img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/lightning.svg" width="80"/>
+
 # Jau Programming Language
 
-![Jau](https://dummyimage.com/1200x300/0f172a/ffffff&text=Jau+Programming+Language)
+### You break it, Jau fixes it.
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Release](https://img.shields.io/badge/version-0.1.0-green)]()
-[![Runtime](https://img.shields.io/badge/runtime-JUR-orange)]()
-[![Status](https://img.shields.io/badge/status-experimental-red)]()
+<img src="https://img.shields.io/badge/version-0.1.0-blue">
+<img src="https://img.shields.io/badge/runtime-JUR-orange">
+<img src="https://img.shields.io/badge/platform-cross--platform-green">
+<img src="https://img.shields.io/badge/license-MIT-purple">
 
-**You break it, Jau fixes it.**
+<br>
+
+<a href="#english">🇺🇸 English</a> |
+<a href="#persian">🇮🇷 فارسی</a> |
+<a href="#spanish">🇪🇸 Español</a> |
+<a href="#german">🇩🇪 Deutsch</a>
+
+</div>
 
 ---
 
-## 🚀 Overview
+<a id="english"></a>
 
-**Jau** is a modern programming language focused on simplicity, performance, and developer happiness.
+# 🚀 Jau
 
-Built for clarity and power, Jau is designed to help developers build software faster without unnecessary complexity.
+**Jau** is a modern programming language designed for speed, simplicity, and developer power.
+
+It focuses on clean syntax, strong performance, and a developer‑friendly ecosystem.
 
 ---
 
-## ⚙️ Runtime
+# ⚡ Core Philosophy
 
-Jau programs run on **JUR (Jau Runtime)**.
+• Simple syntax  
+• Powerful runtime  
+• Cross‑platform execution  
+• Fast compilation  
+• Modern tooling  
 
-JUR handles:
+---
 
-- Program execution
-- Memory management
-- Bytecode processing
-- Cross‑platform compatibility
+# 🧠 Runtime
+
+Programs run using **JUR (Jau Runtime)**
 
 ```
 Jau Source
@@ -37,92 +53,56 @@ Jau Compiler
      ↓
 Jau Bytecode
      ↓
-JUR (Jau Runtime)
+JUR Runtime
      ↓
 Operating System
 ```
 
 ---
 
-## ✨ Features
-
-- ⚡ Fast runtime execution  
-- 🧠 Clean readable syntax  
-- 🔧 Modern toolchain  
-- 🌍 Cross‑platform support  
-- 📦 Future package ecosystem  
-
----
-
-## 📦 Example Code
+# 🧩 Syntax
 
 ```
 ^This Is A Simple Code^
 
-name = "World"
+user :: "DeathAmir"
 
-print("Hello " + name)
+print -> "Hello " + user
 ```
 
 ```
 ^Function Example^
 
-function greet(name) {
-    print("Hello " + name)
+greet(name) =>
+{
+    print -> "Hello " + name
 }
 
 greet("Jau")
 ```
 
 ```
-^Variables^
+^Condition Example^
 
-age = 20
-city = "Tehran"
+age :: 18
 
-print(age)
-print(city)
+age >= 18 ?
+{
+    print -> "Access Granted"
+}
+:
+{
+    print -> "Access Denied"
+}
 ```
 
----
+```
+^Loop Example^
 
-## 🧰 Toolchain
+i :: 0
 
-| Tool | Description |
-|-----|-------------|
-| `jauc` | Jau Compiler |
-| `jur` | Jau Runtime |
-| `jaupm` | Package Manager |
-| `jaudoc` | Documentation Generator |
-
----
-
-## 🌍 Platform Support
-
-| Platform | Status |
-|--------|--------|
-| 🪟 Windows | ✅ |
-| 🐧 Linux | ✅ |
-| 🍎 macOS | ✅ |
-
----
-
-## 📊 Language Information
-
-| Property | Value |
-|--------|--------|
-| Language Type | Compiled |
-| Runtime | JUR |
-| First Release | 2026 |
-| License | MIT |
-| Author | DeathAmir |
-
----
-
-## 🪪 License
-
-MIT License
-
-Copyright (c) 2026 DeathAmir
-
-
+loop i < 5
+{
+    print -> i
+    i++
+}
