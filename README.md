@@ -277,7 +277,7 @@ DeathAmir
 
 ## ⭐ Support The Project
 
-<img src="https://img.shields.io/github/stars/DeathAmir/Jau?style=social">
+<img src="https://img.shields.io/github/stars/DeathAmir/Jau-lang?style=social">
 
 <br><br>
 
