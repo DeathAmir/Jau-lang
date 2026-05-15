@@ -1,4 +1,3 @@
-:::writing
 # Jau Programming Language
 
 ![Jau](https://dummyimage.com/1200x300/0f172a/ffffff&text=Jau+Programming+Language)
@@ -125,5 +124,5 @@ print(city)
 MIT License
 
 Copyright (c) 2026 DeathAmir
-:::
+
 
