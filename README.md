@@ -8,10 +8,10 @@
 
 <br>
 
-<img src="https://img.shields.io/github/stars/DeathAmir/Jau?style=for-the-badge&color=yellow">
-<img src="https://img.shields.io/github/forks/DeathAmir/Jau?style=for-the-badge&color=orange">
-<img src="https://img.shields.io/github/issues/DeathAmir/Jau?style=for-the-badge&color=red">
-<img src="https://img.shields.io/github/license/DeathAmir/Jau?style=for-the-badge&color=purple">
+<img src="https://img.shields.io/github/stars/DeathAmir/Jau-lang?style=for-the-badge&color=yellow">
+<img src="https://img.shields.io/github/forks/DeathAmir/Jau-lang?style=for-the-badge&color=orange">
+<img src="https://img.shields.io/github/issues/DeathAmir/Jau-lang?style=for-the-badge&color=red">
+<img src="https://img.shields.io/github/license/DeathAmir/Jau-lang?style=for-the-badge&color=purple">
 
 <br>
 
