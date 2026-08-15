@@ -11,6 +11,17 @@ static uint32_t resolve_symbol(LinkState&st,size_t oi,uint32_t si){
     if(s.section>0)return symbol_rva(st,oi,s);
     if(s.section==-1)return s.value;
     auto it=st.globals.find(s.name);if(it!=st.globals.end())return symbol_rva(st,it->second.obj,st.objs[it->second.obj].symbols[it->second.sym]);
+    if(!st.x64){
+        std::string alt=s.name;
+        if(!alt.empty()&&alt[0]=='_')alt.erase(0,1);else alt="_"+alt;
+        auto jt=st.globals.find(alt);if(jt!=st.globals.end())return symbol_rva(st,jt->second.obj,st.objs[jt->second.obj].symbols[jt->second.sym]);
+        if(s.name.empty()||s.name[0]!='_'){
+            std::string prefix="_"+s.name+"@";
+            DefRef* found=nullptr;
+            for(auto&g:st.globals)if(g.first.rfind(prefix,0)==0){if(found)throw std::runtime_error("ambiguous stdcall external symbol: "+s.name);found=&g.second;}
+            if(found)return symbol_rva(st,found->obj,st.objs[found->obj].symbols[found->sym]);
+        }
+    }
     auto ii=st.import_target.find(s.name);if(ii!=st.import_target.end())return ii->second;
     auto ia=st.iat_target.find(s.name);if(ia!=st.iat_target.end())return ia->second;
     throw std::runtime_error("unresolved external symbol: "+s.name);
