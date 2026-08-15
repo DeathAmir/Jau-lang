@@ -31,8 +31,9 @@ jobs:
           Add-Content -Encoding utf8 cpp-build\CMakeLists.txt "add_library(cppmath OBJECT `"$src`")"
           cmake -S cpp-build -B cpp-build\out -A x64
           cmake --build cpp-build\out --config Release --parallel 2
-          $obj = Get-ChildItem cpp-build\out -Recurse -Filter cppmath.cpp.obj | Select-Object -First 1
+          $obj = Get-ChildItem cpp-build\out -Recurse -Filter *.obj | Where-Object { $_.FullName -match 'cppmath.dir' } | Select-Object -First 1
           if (!$obj) { throw 'MSVC x64 cppmath.obj not found' }
+          Write-Host "Using native object: $($obj.FullName)"
           Copy-Item -Recurse tests\native_extension extpkg
           New-Item -ItemType Directory -Force extpkg\native\windows-x86_64 | Out-Null
           Copy-Item $obj.FullName extpkg\native\windows-x86_64\cppmath.obj
@@ -70,8 +71,9 @@ jobs:
           Add-Content -Encoding utf8 cpp-build32\CMakeLists.txt "add_library(cppmath OBJECT `"$src`")"
           cmake -S cpp-build32 -B cpp-build32\out -A Win32
           cmake --build cpp-build32\out --config Release --parallel 2
-          $obj = Get-ChildItem cpp-build32\out -Recurse -Filter cppmath.cpp.obj | Select-Object -First 1
+          $obj = Get-ChildItem cpp-build32\out -Recurse -Filter *.obj | Where-Object { $_.FullName -match 'cppmath.dir' } | Select-Object -First 1
           if (!$obj) { throw 'MSVC x86 cppmath.obj not found' }
+          Write-Host "Using native object: $($obj.FullName)"
           Copy-Item -Recurse tests\native_extension extpkg32
           New-Item -ItemType Directory -Force extpkg32\native\windows-x86 | Out-Null
           Copy-Item $obj.FullName extpkg32\native\windows-x86\cppmath.obj
