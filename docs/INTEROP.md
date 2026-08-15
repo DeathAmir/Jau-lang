@@ -1,8 +1,10 @@
 # Jau ↔ C/C++ interoperability
 
-Jau 0.6 adds relocatable object generation and an integer/bool C ABI boundary for the AOT backend.
+Jau 0.6 provides relocatable object generation and a platform C ABI boundary for the AOT backend.
 
-## Jau to C
+## Jau object → C/C++
+
+Jau source:
 
 ```jau
 func add(a, b) {
@@ -22,50 +24,91 @@ Windows:
 jauc obj math.jau -o math.obj --target windows-x86_64
 ```
 
-The exported symbol is `jau_fn_add`.
+The exported symbol is:
+
+```text
+jau_fn_add
+```
+
+C declaration:
 
 ```c
 extern long long jau_fn_add(long long, long long);
 ```
 
-For C++:
+C++ declaration:
 
 ```cpp
 extern "C" long long jau_fn_add(long long, long long);
 ```
 
-## C to Jau
+The resulting `.o` / `.obj` can be added to an ordinary CMake, GCC, Clang or MSVC target.
 
-Declare an AOT-only foreign function:
+## Jau → C/C++ foreign calls
+
+Jau:
 
 ```jau
-extern func c_mul(a, b);
+extern func cpp_mul(a, b);
 
-func mixed(a, b) {
-    return c_mul(a, b) + 1;
+func answer() {
+    return cpp_mul(6, 7);
 }
 ```
 
-Provide the implementation from C:
+C++:
 
-```c
-long long c_mul(long long a, long long b) {
+```cpp
+extern "C" long long cpp_mul(long long a, long long b) {
     return a * b;
 }
 ```
 
-Build the Jau object and the C object, then link them with the normal platform linker/compiler driver.
+One-command Linux build:
+
+```bash
+jauc native app.jau -o app --target linux-x86_64 --link helper.cpp
+```
+
+C is also accepted:
+
+```bash
+jauc native app.jau -o app --target linux-x86_64 --link helper.c
+```
+
+Prebuilt object files can be passed through the same `--link` option.
 
 ## ABI
 
-Current object interoperability uses the platform C ABI:
+Current AOT interop uses the platform C ABI:
 
 - Windows x86-64: Microsoft x64 integer register ABI;
 - Linux x86-64: System V AMD64 integer register ABI;
 - x86 targets: cdecl stack arguments.
 
-Current AOT functions accept integer/bool-style machine values. Rich string/array/struct FFI types are not implemented yet.
+The stable exported function naming convention is `jau_fn_<qualified-name>` with namespace punctuation normalized to underscores.
 
-## Package imports
+Current FFI values are integer/bool-style machine values. String, array, struct, callback and ownership-safe FFI are future work.
 
-Protected packages are expanded in memory before AOT code generation, so an installed `package.jaup` can participate directly in `jauc asm` and `jauc obj` without writing plaintext package source to disk.
+## Protected packages in object builds
+
+Package modules do not have to exist as plaintext source after installation. For:
+
+```jau
+import "pkg:NumPkg"
+```
+
+`jauc asm` and `jauc obj` read the package module from `$JAU_HOME/packages/NumPkg/package.jaup`, decode it in memory, parse the recovered source text, and compile it into the same AOT/object compilation unit.
+
+That means code from protected packages can contribute exported Jau symbols to a `.o` / `.obj` without permanently extracting source files to disk.
+
+## Windows assembler/object path
+
+`jauas` supports:
+
+```cmd
+jauas input.s -o output.obj --target windows-x86_64 --object
+jauas input.s -o output.obj --target windows-x86 --object
+```
+
+Windows targets produce COFF relocatable objects. Final PE executable linking is performed by a normal platform linker/compiler driver so CRT and external library imports remain standards-compatible.
