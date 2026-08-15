@@ -1,0 +1,5 @@
+let start = time.now_ms();
+time.sleep_ms(2);
+let finish = time.now_ms();
+print(finish >= start);
+print(time.now_ns() >= 0);
