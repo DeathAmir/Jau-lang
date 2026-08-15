@@ -103,28 +103,3 @@ static Value mulv(const Value&a,const Value&b){
         return std::get<int64_t>(a.data)*std::get<int64_t>(b.data);
 #endif
     }
-    return as_double(a)*as_double(b);
-}
-static bool eqv(const Value&a,const Value&b){
-    if (a.data.index()==b.data.index()) {
-        if(std::holds_alternative<std::monostate>(a.data)) return true;
-        if(auto p=std::get_if<int64_t>(&a.data))return *p==std::get<int64_t>(b.data);
-        if(auto p=std::get_if<double>(&a.data))return *p==std::get<double>(b.data);
-        if(auto p=std::get_if<bool>(&a.data))return *p==std::get<bool>(b.data);
-        if(auto p=std::get_if<std::string>(&a.data))return *p==std::get<std::string>(b.data);
-        if(auto p=std::get_if<ArrayPtr>(&a.data))return p->get()==std::get<ArrayPtr>(b.data).get();
-    }
-    return is_num(a)&&is_num(b)&&as_double(a)==as_double(b);
-}
-static Value eval_binary(const std::string&op,const Value&a,const Value&b){
-    if(op=="+")return addv(a,b); if(op=="-")return subv(a,b); if(op=="*")return mulv(a,b);
-    if(op=="/"){double d=as_double(b);if(d==0)throw Error("division by zero");if(std::holds_alternative<int64_t>(a.data)&&std::holds_alternative<int64_t>(b.data))return as_int(a)/as_int(b);return as_double(a)/d;}
-    if(op=="%"){auto d=as_int(b);if(!d)throw Error("modulo by zero");return as_int(a)%d;}
-    if(op=="==")return eqv(a,b);if(op=="!=")return !eqv(a,b);if(op=="<")return as_double(a)<as_double(b);if(op=="<=")return as_double(a)<=as_double(b);if(op==">")return as_double(a)>as_double(b);if(op==">=")return as_double(a)>=as_double(b);if(op=="&&")return a.truthy()&&b.truthy();if(op=="||")return a.truthy()||b.truthy();throw Error("bad operator "+op);
-}
-
-static std::string read_text(const fs::path&p){std::ifstream f(p,std::ios::binary);if(!f)throw Error("cannot open "+p.string());return std::string((std::istreambuf_iterator<char>(f)),{});}
-static void write_text(const fs::path&p,const std::string&s){if(p.has_parent_path())fs::create_directories(p.parent_path());std::ofstream f(p,std::ios::binary);if(!f)throw Error("cannot write "+p.string());f.write(s.data(),(std::streamsize)s.size());}
-static std::string replace_all(std::string s,const std::string&a,const std::string&b){size_t p=0;while((p=s.find(a,p))!=std::string::npos){s.replace(p,a.size(),b);p+=b.size();}return s;}
-static uint64_t fnv1a64(const std::string&s){uint64_t h=1469598103934665603ULL;for(unsigned char c:s){h^=c;h*=1099511628211ULL;}return h;}
-static std::string shell_quote(const std::string&s){std::string o="'";for(char c:s){if(c=='\'')o+="'\\''";else o+=c;}return o+"'";}
