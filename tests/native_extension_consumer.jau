@@ -1,2 +1,5 @@
 import "pkg:CppMath"
-print(CppMath.mul[6, 7]);
+let answer = CppMath.mul[6, 7];
+if (answer != 42) {
+    let crash = 1 / 0;
+}
