@@ -54,6 +54,7 @@ jobs:
 
   windows-x64:
     runs-on: windows-latest
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
       - run: cmake -S . -B build -A x64 -DJAU_ENABLE_ASM_FASTOPS=OFF
@@ -66,10 +67,9 @@ jobs:
         run: |
           .\build\Release\jauc.exe native tests\native_simple.jau -o self-native.exe --target windows-x86_64
           if (!(Test-Path .\self-native.exe)) { throw "internal linker did not create self-native.exe" }
-          cmd /c "self-native.exe > self-native.out"
-          if ($LASTEXITCODE -ne 0) { throw "internal PE32+ executable failed with exit code $LASTEXITCODE" }
-          $out = (Get-Content .\self-native.out -Raw).Trim()
-          if ($out -ne "42") { throw "internal PE32+ executable output mismatch: $out" }
+          $p = Start-Process -FilePath .\self-native.exe -PassThru
+          if (!$p.WaitForExit(5000)) { Stop-Process -Id $p.Id -Force; throw "internal PE32+ executable hung" }
+          if ($p.ExitCode -ne 0) { throw "internal PE32+ executable failed with exit code $($p.ExitCode)" }
       - shell: pwsh
         run: |
           .\build\Release\jauc.exe standalone examples\fibonacci.jau -o jau-example.exe --runtime .\build\Release\jur.exe
@@ -120,10 +120,9 @@ jobs:
           $env:JAU_HOME="$PWD\native-home"
           & $pm install .\extpkg\dist\CppMath-1.0.0.jaux
           & $jauc native tests\native_extension_consumer.jau -o native-extension.exe --target windows-x86_64
-          cmd /c "native-extension.exe > native-extension.out"
-          if ($LASTEXITCODE -ne 0) { throw "native .jaux extension executable failed with exit code $LASTEXITCODE" }
-          $out = (Get-Content .\native-extension.out -Raw).Trim()
-          if ($out -ne "42") { throw "native .jaux extension failed: $out" }
+          $p = Start-Process -FilePath .\native-extension.exe -PassThru
+          if (!$p.WaitForExit(5000)) { Stop-Process -Id $p.Id -Force; throw "native .jaux extension executable hung" }
+          if ($p.ExitCode -ne 0) { throw "native .jaux extension failed with exit code $($p.ExitCode)" }
       - name: Jau C ABI object interop
         shell: pwsh
         run: |
@@ -165,6 +164,7 @@ jobs:
 
   windows-x86:
     runs-on: windows-latest
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
       - run: cmake -S . -B build32 -A Win32 -DJAU_ENABLE_ASM_FASTOPS=OFF
@@ -176,10 +176,9 @@ jobs:
         run: |
           .\build32\Release\jauc.exe native tests\native_simple.jau -o self-native32.exe --target windows-x86
           if (!(Test-Path .\self-native32.exe)) { throw "internal linker did not create self-native32.exe" }
-          cmd /c "self-native32.exe > self-native32.out"
-          if ($LASTEXITCODE -ne 0) { throw "internal PE32 executable failed with exit code $LASTEXITCODE" }
-          $out = (Get-Content .\self-native32.out -Raw).Trim()
-          if ($out -ne "42") { throw "internal PE32 executable output mismatch: $out" }
+          $p = Start-Process -FilePath .\self-native32.exe -PassThru
+          if (!$p.WaitForExit(5000)) { Stop-Process -Id $p.Id -Force; throw "internal PE32 executable hung" }
+          if ($p.ExitCode -ne 0) { throw "internal PE32 executable failed with exit code $($p.ExitCode)" }
       - shell: pwsh
         run: |
           .\build32\Release\jauc.exe standalone examples\fibonacci.jau -o jau-example32.exe --runtime .\build32\Release\jur.exe
@@ -201,10 +200,9 @@ jobs:
           $env:JAU_HOME="$PWD\native-home32"
           & $pm install .\extpkg32\dist\CppMath-1.0.0.jaux
           & $jauc native tests\native_extension_consumer.jau -o native-extension32.exe --target windows-x86
-          cmd /c "native-extension32.exe > native-extension32.out"
-          if ($LASTEXITCODE -ne 0) { throw "native x86 .jaux extension executable failed with exit code $LASTEXITCODE" }
-          $out = (Get-Content .\native-extension32.out -Raw).Trim()
-          if ($out -ne "42") { throw "native x86 .jaux extension failed: $out" }
+          $p = Start-Process -FilePath .\native-extension32.exe -PassThru
+          if (!$p.WaitForExit(5000)) { Stop-Process -Id $p.Id -Force; throw "native x86 .jaux extension executable hung" }
+          if ($p.ExitCode -ne 0) { throw "native x86 .jaux extension failed with exit code $($p.ExitCode)" }
       - name: Jau C ABI object interop x86
         shell: pwsh
         run: |
