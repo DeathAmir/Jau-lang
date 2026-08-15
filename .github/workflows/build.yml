@@ -86,10 +86,8 @@ jobs:
           $archive = "$env:JAU_HOME\packages\iRx\package.jaup"
           if (!(Test-Path $archive)) { throw "protected package install failed" }
           if (Test-Path "$env:JAU_HOME\packages\iRx\src\main.jau") { throw "installed package leaked plaintext source" }
-          @'
-import "pkg:iRx"
-print(iRx.hello["Windows"]);
-'@ | Set-Content -Encoding utf8 .\consumer.jau
+          Set-Content -Encoding utf8 .\consumer.jau 'import "pkg:iRx"'
+          Add-Content -Encoding utf8 .\consumer.jau 'print(iRx.hello["Windows"]);'
           $out = & $jauc run .\consumer.jau -I "$PWD\..\stdlib"
           if ($out -ne "hello Windows from iRx") { throw "protected package import failed: $out" }
           Pop-Location
