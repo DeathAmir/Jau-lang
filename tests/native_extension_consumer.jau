@@ -1,0 +1,2 @@
+import "pkg:CppMath"
+print(CppMath.mul[6, 7]);
