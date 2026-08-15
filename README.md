@@ -2,13 +2,15 @@
 
 # Jau Programming Language
 
-**Bytecode VM · Native AOT · Internal Windows PE linker · Protected packages · C/C++ native extensions · Staged self-hosting**
+### Simple source. Native code. A toolchain Jau can increasingly own itself.
+
+**VM · Native AOT · Internal Windows PE32/PE32+ linker · Protected packages · C/C++ extensions · Staged self-hosting**
 
 [![Build](https://github.com/DeathAmir/Jau-lang/actions/workflows/build.yml/badge.svg)](https://github.com/DeathAmir/Jau-lang/actions/workflows/build.yml)
-[![PE Import Tests](https://github.com/DeathAmir/Jau-lang/actions/workflows/pe-import.yml/badge.svg)](https://github.com/DeathAmir/Jau-lang/actions/workflows/pe-import.yml)
-![Version](https://img.shields.io/badge/Jau-0.6.0-4c8bf5)
-![Targets](https://img.shields.io/badge/Windows-x86%20%7C%20x64-0078D4)
-![Targets](https://img.shields.io/badge/Linux-x86%20%7C%20x64-FCC624)
+[![Native 0.7](https://github.com/DeathAmir/Jau-lang/actions/workflows/v07-native.yml/badge.svg)](https://github.com/DeathAmir/Jau-lang/actions/workflows/v07-native.yml)
+![Version](https://img.shields.io/badge/Jau-0.7.0-4c8bf5)
+![Windows](https://img.shields.io/badge/Windows-PE32%20%7C%20PE32%2B-0078D4)
+![Linux](https://img.shields.io/badge/Linux-x86%20%7C%20x64-FCC624)
 ![Stage0](https://img.shields.io/badge/Stage--0-C%2B%2B17-00599C)
 
 `Jau → VM` &nbsp; `Jau → ASM` &nbsp; `Jau → OBJ` &nbsp; `Jau → PE EXE` &nbsp; `C/C++ ↔ Jau`
@@ -17,137 +19,252 @@
 
 ---
 
-## Why Jau?
+## What is Jau?
 
-Jau is an experimental programming language and toolchain built around a compact syntax, a bytecode VM, an x86/x86-64 AOT backend, protected package distribution, native C/C++ interoperability, and measurable staged self-hosting.
+Jau is an experimental systems-oriented programming language built around a compact syntax and a deliberately visible toolchain. The project contains its own bytecode VM, x86/x86-64 AOT backend, assembler/object writer, Windows PE linker, package manager, protected package format and staged self-hosting path.
 
-The Windows native path is now owned by the Jau toolchain itself:
+For supported Windows native programs the final executable path is owned by Jau:
 
 ```text
 main.jau
    │
    ▼
-  jauc
+  jauc          parser + optimizer + AOT
    │
    ▼
 Intel assembly
    │
    ▼
- jauas
+ jauas          x86/x64 object writer
    │
    ▼
 COFF .obj
    │
    ▼
- jauld
+ jauld          Jau's PE linker
    │
    ├────────────► PE32   Windows x86
    └────────────► PE32+  Windows x86-64
 ```
 
-For supported Jau AOT programs, the final Windows `.exe` no longer needs GCC, MinGW, MSVC `link.exe`, or LLVM LLD for the **OBJ → EXE** step.
+For that supported path, **OBJ → EXE does not require GCC, MinGW, MSVC `link.exe`, or LLVM LLD**.
 
-## Execution models
+---
 
-```text
-.jau source
-    │
-    ├── jauc run ─────────► execute immediately
-    │
-    ├── jauc build ───────► .jbc ───────► jur VM
-    │
-    ├── jauc standalone ──► JUR + embedded JBC executable
-    │
-    ├── jauc asm ─────────► Intel/GNU-style assembly
-    │
-    ├── jauc obj ─────────► ELF .o / COFF .obj
-    │
-    └── jauc native ──────► native executable
+## 30-second example
+
+```jau
+func add(a, b) {
+    return a + b;
+}
+
+func main() {
+    let answer = add(20, 22);
+    print(answer);
+    return 0;
+}
+
+main();
 ```
 
+Run it:
+
+```cmd
+jauc run main.jau
+```
+
+Build a native Windows x64 executable:
+
+```cmd
+jauc native main.jau -o main.exe --target windows-x86_64
+main.exe
+```
+
+Expected output:
+
+```text
+42
+```
+
+`jauc native` defaults to the current maximum optimization level (`-O3`) unless you explicitly select another level.
+
+---
+
+## Jau 0.7 highlights
+
+### Smart object metadata (`JAUMETA1`)
+
+`jauc obj` now emits a sidecar metadata file together with the object:
+
+```cmd
+jauc obj main.jau -o main.obj --target windows-x86_64 -O3
+```
+
+Produces:
+
+```text
+main.obj
+main.obj.jmeta
+```
+
+Example metadata:
+
+```ini
+JAUMETA1
+producer="jauc"
+version="0.7.0"
+target="windows-x86_64"
+abi="jau-c-v1"
+kind="jau-object"
+subsystem="console"
+entry="jau_fn_main"
+optimize=3
+```
+
+The linker reads this automatically:
+
+```cmd
+jauld main.obj -o main.exe
+```
+
+This fixes the old mismatch where library-mode Jau objects exported `jau_fn_main` while `jauld` only searched for `main`.
+
+Even if the metadata is removed, `jauld` has compatibility entry discovery for `main` / `jau_fn_main` and their x86 decorated forms.
+
+### Monotonic time API
+
+```jau
+let start = time.now_ms();
+
+let i = 0;
+while (i < 1000000) {
+    i = i + 1;
+}
+
+let finish = time.now_ms();
+print(finish - start);
+```
+
+Available names:
+
+```text
+time.now_ms()
+time.now_ns()
+time.sleep_ms(ms)
+clock_ms()
+clock_ns()
+sleep_ms(ms)
+clock()
+```
+
+`time.now_ms()` is the recommended benchmark clock. The VM uses `steady_clock`; Windows native AOT maps to the platform monotonic tick API.
+
+### Faster integer AOT path
+
+Jau 0.7 improves common integer arithmetic/comparison code generation by avoiding part of the temporary push/pop traffic for simple variable/literal expressions and adds a final peephole cleanup pass.
+
+Typical hot-loop source:
+
+```jau
+i = i + 1;
+sum = sum + i;
+```
+
+is now a better target for direct register operations than in previous releases.
+
+Jau does **not** claim that every program is universally faster than optimized C++. Performance claims should be measured per workload and checked against generated assembly. See [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
+
+---
+
 ## Language at a glance
+
+### Variables and constants
+
+```jau
+let score = 10;
+score = score + 1;
+
+const max_score = 100;
+```
+
+### Functions
+
+```jau
+func mul(a, b) {
+    return a * b;
+}
+```
+
+### Control flow
+
+```jau
+if (score >= 10) {
+    print(1);
+} else {
+    print(0);
+}
+
+let i = 0;
+while (i < 10) {
+    i = i + 1;
+}
+```
+
+`break`, `continue`, recursion and `return` are supported.
+
+### Namespaces
 
 ```jau
 namespace MathBox {
     func add(a, b) {
         return a + b;
     }
-
-    func mul(a, b) {
-        return a * b;
-    }
 }
 
-let answer = MathBox.add[20, 22];
-print(answer);
+print(MathBox.add(20, 22));
+print(MathBox.add[20, 22]);
 ```
 
-Current language features include:
+Both normal calls and Jau bracket-call syntax are supported.
 
-- integers, floats, booleans, strings and `null` in the VM;
-- arrays, indexing, `push`, `pop`, `join`, `split` and string helpers;
-- mutable `let` and enforced `const`;
-- functions, recursion and namespaces;
-- `if`, `else`, `while`, `break`, `continue`, `return`;
-- normal calls `MathBox.add(1, 2)` and Jau bracket calls `MathBox.add[1, 2]`;
-- local source imports and protected package imports;
-- bytecode, standalone, assembly, object and native build paths;
-- C ABI interoperability for the current integer/bool AOT boundary.
+### Arrays (VM)
 
-## Toolchain
-
-| Tool | Purpose |
-|---|---|
-| `jauc` | Compiler, runner, bytecode builder, AOT emitter, object builder and native driver |
-| `jur` | JBC virtual machine and embedded-payload runtime |
-| `jauas` | Jau assembler/object writer for supported x86/x86-64 output |
-| `jauld` | Internal Windows COFF → PE32/PE32+ linker |
-| `jaupm` | Package manager whose command layer is written in Jau |
-| `jau-setup` | Installs the toolchain and configures `JAU_HOME` / `PATH` |
-
-## Quick start
-
-Run source directly:
-
-```bash
-jauc run main.jau
+```jau
+let values = [10, 20, 30];
+print(values[0]);
+push(values, 40);
+print(pop(values));
 ```
 
-Build bytecode:
+Current limitation: indexed assignment such as `values[1] = 99;` is not yet part of the assignment grammar.
 
-```bash
-jauc build main.jau -o main.jbc
-jur main.jbc
+### Imports
+
+```jau
+import "local_module.jau"
+import "pkg:MathBox"
 ```
 
-Build a standalone VM executable:
+See the full implemented syntax in [`docs/LANGUAGE.md`](docs/LANGUAGE.md).
 
-```bash
-jauc standalone main.jau -o main.exe
-```
+---
 
-Emit assembly:
+## Execution models
 
-```bash
-jauc asm main.jau -o main.s --target windows-x86_64
-```
-
-Emit a C/C++-linkable object:
-
-```bash
-jauc obj main.jau -o main.obj --target windows-x86_64
-```
-
-Build a native Windows executable with the internal PE linker:
-
-```bash
-jauc native main.jau -o main.exe --target windows-x86_64
-```
-
-32-bit Windows:
-
-```bash
-jauc native main.jau -o main32.exe --target windows-x86
+```text
+.jau source
+    │
+    ├── jauc run ─────────► execute in VM
+    │
+    ├── jauc build ───────► .jbc ───────► jur
+    │
+    ├── jauc standalone ──► runtime + embedded JBC executable
+    │
+    ├── jauc asm ─────────► assembly
+    │
+    ├── jauc obj ─────────► ELF .o / COFF .obj + Jau metadata
+    │
+    └── jauc native ──────► native executable
 ```
 
 Supported AOT targets:
@@ -161,42 +278,61 @@ windows-x86
 
 ---
 
-## Internal Windows PE linker
+## Toolchain
 
-`jauld` consumes COFF objects produced by `jauas` and supported C-ABI objects, resolves symbols and relocations, creates imports when required, lays out PE sections, creates an entry point and emits Windows executables.
+| Tool | Role |
+|---|---|
+| `jauc` | compiler driver, VM runner, JBC builder, AOT emitter, object/native driver |
+| `jur` | JBC virtual machine and embedded-payload runtime |
+| `jauas` | Jau x86/x86-64 assembler/object writer |
+| `jauld` | internal COFF → PE32/PE32+ Windows linker |
+| `jaupm` | package manager whose high-level command layer is written in Jau |
+| `jau-setup` | toolchain installer / `JAU_HOME` setup |
 
-Direct use:
+### Common commands
 
 ```cmd
-jauas app.s -o app.obj --target windows-x86_64 --object
-jauld app.obj -o app.exe --target windows-x86_64
+jauc run main.jau
+jauc build main.jau -o main.jbc
+jur main.jbc
+jauc asm main.jau -o main.s --target windows-x86_64 -O3
+jauc obj main.jau -o main.obj --target windows-x86_64 -O3
+jauld main.obj -o main.exe
+jauc native main.jau -o main.exe --target windows-x86_64 -O3
+jauc native main.jau -o main32.exe --target windows-x86 -O3
 ```
-
-Normal users usually only need:
-
-```cmd
-jauc native app.jau -o app.exe --target windows-x86_64
-```
-
-Currently exercised by CI on both Windows architectures:
-
-- PE32+ / AMD64 executable creation;
-- PE32 / i386 executable creation;
-- COFF symbol resolution across multiple objects;
-- x86/x64 relative and absolute relocation forms used by Jau;
-- executable entry-point generation;
-- native Jau package object linking;
-- import-table/IAT paths used by the Jau AOT runtime.
-
-`jauld` is deliberately scoped to Jau's supported native ABI and object subset. It is **not claimed to be a drop-in replacement for every feature of MSVC LINK or LLD** such as arbitrary COMDAT policy, PDB production, every SEH/TLS/resource scenario, delay-load libraries or the entire Windows linker surface.
 
 ---
 
-## C/C++ → Jau native extensions (`.jaux`)
+## Internal PE linker
 
-A C or C++ developer can compile native code into target-specific COFF objects, package those objects together with a Jau wrapper, install the package through JauPM, then import it like a normal Jau package.
+`jauld` reads supported x86/x64 COFF objects, resolves Jau/C ABI symbols and relocations, builds imports/IAT, lays out PE sections, creates a startup thunk and writes a Windows executable.
 
-Example package:
+Direct usage:
+
+```cmd
+jauld app.obj -o app.exe
+```
+
+Optional overrides:
+
+```cmd
+jauld app.obj -o app.exe --entry jau_fn_main
+jauld app.obj -o app.exe --meta custom.jmeta
+jauld app.obj -o app.exe --target windows-x86_64
+```
+
+Current native CI exercises PE32 and PE32+ executables on real Windows runners.
+
+`jauld` is scoped to the object/ABI subset supported by Jau. It is **not advertised as a complete drop-in replacement for every feature of MSVC LINK or LLD**.
+
+Detailed linker/metadata reference: [`docs/LINKER.md`](docs/LINKER.md).
+
+---
+
+## C/C++ native extensions (`.jaux`)
+
+A native package combines a Jau wrapper with target-specific precompiled C/C++ objects.
 
 ```text
 CppMath/
@@ -210,7 +346,7 @@ CppMath/
         └── cppmath.obj
 ```
 
-### C++ implementation
+C++:
 
 ```cpp
 extern "C" long long cppmath_mul(long long a, long long b) {
@@ -218,30 +354,7 @@ extern "C" long long cppmath_mul(long long a, long long b) {
 }
 ```
 
-Compile the extension object once for each architecture using your C/C++ compiler of choice:
-
-```bash
-x86_64-w64-mingw32-g++ -c -O2 -fno-exceptions -fno-rtti cppmath.cpp -o native/windows-x86_64/cppmath.obj
-i686-w64-mingw32-g++   -c -O2 -fno-exceptions -fno-rtti cppmath.cpp -o native/windows-x86/cppmath.obj
-```
-
-C++ source compilation still requires a C/C++ compiler. After the object is packaged, **Jau users do not need that compiler to consume the extension**.
-
-### `jau.pkg`
-
-```ini
-name="CppMath"
-version="1.0.0"
-main="src/main.jau"
-type="native"
-native_windows_x86_64="native/windows-x86_64/cppmath.obj"
-native_windows_x86="native/windows-x86/cppmath.obj"
-dependencies=""
-```
-
-Multiple objects may be comma-separated in a target field.
-
-### Jau wrapper
+Jau wrapper:
 
 ```jau
 extern func cppmath_mul(a, b);
@@ -253,7 +366,18 @@ namespace CppMath {
 }
 ```
 
-### Pack and install
+Manifest:
+
+```ini
+name="CppMath"
+version="1.0.0"
+main="src/main.jau"
+type="native"
+native_windows_x86_64="native/windows-x86_64/cppmath.obj"
+native_windows_x86="native/windows-x86/cppmath.obj"
+```
+
+Package it:
 
 ```cmd
 jaupm pack dist\CppMath-1.0.0.jaux
@@ -261,67 +385,45 @@ jaupm verify dist\CppMath-1.0.0.jaux
 jaupm install dist\CppMath-1.0.0.jaux
 ```
 
-### Use from Jau
+Consume it normally:
 
 ```jau
 import "pkg:CppMath"
-
-let answer = CppMath.mul[6, 7];
-print(answer);
+print(CppMath.mul[6, 7]);
 ```
-
-Build it:
 
 ```cmd
 jauc native main.jau -o app.exe --target windows-x86_64
 ```
 
-During native compilation Jau reads the wrapper and matching native object from the protected installed package, materializes the object only inside a temporary build directory, links it using `jauld`, then removes temporary build files.
+Producing the C/C++ object initially still requires a C/C++ compiler. **The Jau user consuming an already-built `.jaux` package does not need that compiler for Jau's final PE link step.**
 
 See [`docs/NATIVE_EXTENSIONS.md`](docs/NATIVE_EXTENSIONS.md).
 
 ---
 
-## Jau ↔ C/C++ object interoperability
+## Jau ↔ C/C++ object ABI
 
-Jau functions emitted in library/object mode use symbols such as:
+Object/library mode exports Jau functions as symbols such as:
 
 ```text
 jau_fn_add
 jau_fn_MathBox_mul
 ```
 
-Jau:
-
-```jau
-func add(a, b) {
-    return a + b;
-}
-```
-
-Object:
-
-```cmd
-jauc obj math.jau -o math.obj --target windows-x86_64
-```
-
-C++:
+C/C++ can call them through the current machine-value C ABI:
 
 ```cpp
 extern "C" long long jau_fn_add(long long, long long);
 ```
 
-The reverse direction uses `extern func`:
+The reverse direction:
 
 ```jau
 extern func cpp_mul(a, b);
-
-func calculate() {
-    return cpp_mul(6, 7);
-}
 ```
 
-The current stable native FFI boundary is integer/bool-sized machine values. Rich VM-owned values such as Jau strings and arrays are not yet a stable C ABI.
+The current stable native FFI boundary is integer/bool-sized machine values. VM-owned strings and arrays do not yet have a stable native ownership ABI.
 
 See [`docs/INTEROP.md`](docs/INTEROP.md).
 
@@ -329,16 +431,14 @@ See [`docs/INTEROP.md`](docs/INTEROP.md).
 
 ## Protected packages — JAUPKG2
 
-JauPM packages source and package assets inside a protected binary archive:
-
-```bash
+```cmd
 jaupm init MathBox
 jaupm pack
-jaupm verify dist/MathBox-0.1.0.jaup
-jaupm install dist/MathBox-0.1.0.jaup
+jaupm verify dist\MathBox-0.1.0.jaup
+jaupm install dist\MathBox-0.1.0.jaup
 ```
 
-Installed layout:
+Installed package source can remain inside the protected archive instead of being extracted as plaintext:
 
 ```text
 $JAU_HOME/
@@ -348,18 +448,12 @@ $JAU_HOME/
         └── .installed
 ```
 
-The installed source does not need to exist as plaintext on disk. Package modules are read from `package.jaup` and expanded into the compilation unit in memory.
-
 ```jau
 import "pkg:MathBox"
 print(MathBox.add[20, 22]);
 ```
 
-This works across the compiler paths used by `run`, `build`, `asm`, `obj`, `native` and `standalone`.
-
-JAUPKG2 is practical source protection/obfuscation, **not a claim of unbreakable cryptographic secrecy** against determined reverse engineering.
-
-## Internet registry
+JAUPKG2 is practical source protection/obfuscation, not a claim of unbreakable cryptographic secrecy.
 
 Default registry:
 
@@ -367,53 +461,64 @@ Default registry:
 https://irautox.ir/package
 ```
 
-Install by package name:
-
-```bash
+```cmd
 jaupm install JTTP
-```
-
-JauPM requests:
-
-```text
-https://irautox.ir/package/JTTP
-```
-
-Configure another registry:
-
-```bash
-jaupm registry
 jaupm config set registry https://example.com/package
-jaupm config get registry
 ```
 
-`JAU_REGISTRY` overrides the configured registry for the current environment.
+See [`docs/PACKAGES.md`](docs/PACKAGES.md).
 
 ---
 
-## JauPM standalone
+## Optimization and benchmarking
 
-The high-level JauPM command implementation lives in:
+Optimization levels:
 
 ```text
-tools/jaupm.jau
+-O0  minimal/no optimization
+-O1  AST optimization
+-O2  AST + native register/peephole improvements
+-O3  current maximum
 ```
 
-The build turns it into a standalone `jaupm` / `jaupm.exe` executable.
+Inspect optimized assembly:
 
 ```cmd
-jaupm version
-jaupm doctor
-jaupm list
+jauc asm bench.jau -o bench.s --target windows-x86_64 -O3
 ```
 
-Launching `jaupm` by a bare PATH name is tested so it does not depend on the current directory to locate its embedded executable payload.
+Benchmark with Jau's monotonic timer:
+
+```jau
+func main() {
+    let start = time.now_ms();
+    let i = 0;
+    let value = 0;
+
+    while (i < 1000000000) {
+        value = value + i;
+        i = i + 1;
+    }
+
+    let finish = time.now_ms();
+    print(value);
+    print(finish - start);
+    return 0;
+}
+
+main();
+```
+
+```cmd
+jauc native bench.jau -o bench.exe --target windows-x86_64 -O3
+bench.exe
+```
+
+Use identical algorithms, integer widths and release settings when comparing against C/C++/Rust/Zig. Full performance notes and optimizer roadmap: [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
 
 ---
 
-## Bootstrap and self-hosting
-
-Jau has a staged bootstrap path:
+## Bootstrap / self-hosting
 
 ```text
 Stage-0 C++ toolchain
@@ -431,15 +536,13 @@ jauas
 Stage-2 executable
 ```
 
-The Stage-1 implementation already processes a growing subset of Jau, but the production lexer, parser, optimizer, JBC compiler, VM, package/archive layer and full native backend still have substantial Stage-0 C++ ownership.
-
-For that reason this repository does **not** advertise an invented “80% self-hosted” number. A real percentage should come from reproducible component ownership plus Stage-2/Stage-3 compiler equivalence.
+The Stage-1 compiler processes a growing subset of Jau, but production lexer/parser/optimizer/VM/package/native-backend ownership is not yet fully self-hosted. The project intentionally avoids inventing a fake self-hosting percentage.
 
 See [`docs/BOOTSTRAP.md`](docs/BOOTSTRAP.md).
 
 ---
 
-## Build Jau from source
+## Build from source
 
 Linux:
 
@@ -464,38 +567,43 @@ cmake -S . -B build32 -A Win32 -DJAU_ENABLE_ASM_FASTOPS=OFF
 cmake --build build32 --config Release --parallel 2
 ```
 
-GitHub Actions builds and tests:
+GitHub Actions covers Linux/Windows x86/x64 plus dedicated native PE and extension tests.
 
-```text
-Linux x86-64
-Linux x86
-Windows x86-64
-Windows x86
-```
+---
 
-## Current native limitations
+## Current boundaries
 
-- AOT currently focuses on integer/bool values; strings and arrays remain VM-first.
-- `jauas` supports the instruction subset generated by Jau's AOT/bootstrap pipelines rather than every MASM/NASM/GAS instruction form.
-- `jauld` targets Jau-generated COFF and supported C-ABI objects; it does not promise every feature of industrial general-purpose Windows linkers.
-- A `.jaux` package can contain precompiled C/C++ objects, but producing those C/C++ objects from source still requires a C/C++ compiler.
-- HTTPS transport uses platform/external transport where appropriate rather than a home-grown TLS implementation.
-- Full compiler self-host parity is still in progress.
+Jau 0.7 is a real working experimental toolchain, not yet a mature replacement for industrial C++/Rust/Go ecosystems.
+
+- VM supports a broader value/builtin surface than native AOT.
+- AOT is currently integer/bool focused.
+- Native string/array ownership ABI is not stable yet.
+- Indexed l-value assignment (`arr[i] = x`) is not implemented yet.
+- Windows AOT `time.now_ns()` currently has millisecond effective resolution; prefer `time.now_ms()` for benchmarks.
+- `jauas` covers the instruction subset generated by Jau rather than every general-purpose assembler syntax.
+- `jauld` covers Jau's supported COFF/PE subset rather than the complete Windows linker universe.
+- Building C/C++ extension objects from `.c/.cpp` source requires a C/C++ compiler; consuming prebuilt `.jaux` packages does not require an external linker for the Jau → PE stage.
+- Full compiler self-host parity remains in progress.
+
+---
 
 ## Documentation
 
+- [`docs/LANGUAGE.md`](docs/LANGUAGE.md) — implemented syntax and builtins
+- [`docs/LINKER.md`](docs/LINKER.md) — `JAUMETA1`, entry resolution and PE linking
+- [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) — optimizer, timing and benchmark methodology
 - [`docs/PACKAGES.md`](docs/PACKAGES.md) — packages, registry and dependencies
 - [`docs/NATIVE_EXTENSIONS.md`](docs/NATIVE_EXTENSIONS.md) — C/C++ `.jaux` packages
 - [`docs/INTEROP.md`](docs/INTEROP.md) — Jau ↔ C/C++ ABI/object integration
-- [`docs/BOOTSTRAP.md`](docs/BOOTSTRAP.md) — staged self-hosting model
+- [`docs/BOOTSTRAP.md`](docs/BOOTSTRAP.md) — staged self-hosting
 - [`bootstrap/README.md`](bootstrap/README.md) — bootstrap source layout
 
 ---
 
 <div align="center">
 
-### Jau 0.6
+## Jau 0.7
 
-**One language · VM + AOT · protected packages · native extensions · internal Windows PE linking**
+**Small syntax · visible compiler · native Windows binaries · protected packages · C/C++ extensions**
 
 </div>
