@@ -19,7 +19,7 @@ if(JAU_ENABLE_ASM_FASTOPS AND NOT MSVC AND CMAKE_SIZEOF_VOID_P EQUAL 8 AND (CMAK
   endif()
 endif()
 add_executable(jauas src/jauas_main.cpp)
-add_executable(jauld src/jauld_main.cpp)
+add_executable(jauld src/jauld_v2_main.cpp)
 add_executable(jauc src/jauc_main.cpp)
 target_link_libraries(jauc PRIVATE jaucore)
 add_executable(jur src/jur_main.cpp)
