@@ -17,14 +17,15 @@ jobs:
       - run: ./build/jauc asm tests/aot_functions.jau -o native-linux-x64.s --target linux-x86_64 && cc -no-pie native-linux-x64.s -o aot-test && printf '720\n1\n3\n4\n' > expected.txt && ./aot-test > actual.txt && diff -u expected.txt actual.txt
       - run: ./build/jauc standalone examples/fibonacci.jau -o jau-example --runtime ./build/jur && test "$(./jau-example)" = "55"
       - run: ./build/jauc run bootstrap/jauc_stage1.jau -- bootstrap/stage2_input.jau zero32.s linux-x86 && ./build/jauas zero32.s -o zero32 --target linux-x86 && file zero32 | grep -q "ELF 32-bit"
-      - run: rm -rf install-test && ./build/jau-setup --prefix "$PWD/install-test" --source-root "$PWD" --no-path && JAU_HOME="$PWD/install-test" ./install-test/bin/jaupm where demo
+      - run: rm -rf install-test && ./build/jau-setup --prefix "$PWD/install-test" --source-root "$PWD" --no-path && test "$(JAU_HOME="$PWD/install-test" ./install-test/bin/jaupm version)" = "JauPM 0.5"
       - name: Stage artifact
         run: |
-          mkdir -p dist/stdlib dist/tools dist/bootstrap
+          mkdir -p dist/stdlib dist/tools dist/bootstrap dist/packages
           cp build/jauc build/jur build/jauas build/jau-setup build/jaupm dist/
           cp -r stdlib/* dist/stdlib/
           cp tools/jaupm.jau dist/tools/
           cp bootstrap/jauc_stage1.jau dist/bootstrap/
+          cp -r packages/JTTP dist/packages/
           cp native-linux-x64.s dist/
       - uses: actions/upload-artifact@v4
         with: {name: jau-linux-x64, path: dist}
@@ -41,11 +42,12 @@ jobs:
       - run: ./build32/jauc standalone examples/fibonacci.jau -o jau-example32 --runtime ./build32/jur && test "$(./jau-example32)" = "55"
       - name: Stage artifact
         run: |
-          mkdir -p dist32/stdlib dist32/tools dist32/bootstrap
+          mkdir -p dist32/stdlib dist32/tools dist32/bootstrap dist32/packages
           cp build32/jauc build32/jur build32/jauas build32/jau-setup build32/jaupm dist32/
           cp -r stdlib/* dist32/stdlib/
           cp tools/jaupm.jau dist32/tools/
           cp bootstrap/jauc_stage1.jau dist32/bootstrap/
+          cp -r packages/JTTP dist32/packages/
           cp native-linux-x86.s dist32/
       - uses: actions/upload-artifact@v4
         with: {name: jau-linux-x86, path: dist32}
@@ -57,26 +59,39 @@ jobs:
       - run: cmake -S . -B build -A x64 -DJAU_ENABLE_ASM_FASTOPS=OFF
       - run: cmake --build build --config Release --parallel 2
       - run: .\build\Release\jauc.exe run examples\hello.jau
+      - run: ctest --test-dir build -C Release --output-on-failure -R "jau_namespaces"
       - run: .\build\Release\jauc.exe asm tests\aot_functions.jau -o native-windows-x64.s --target windows-x86_64
       - shell: pwsh
         run: |
           .\build\Release\jauc.exe standalone examples\fibonacci.jau -o jau-example.exe --runtime .\build\Release\jur.exe
           $out = & .\jau-example.exe
           if ($out -ne "55") { throw "standalone output mismatch: $out" }
-      - name: JauPM binary package smoke test
+      - name: JauPM protected package smoke test
         shell: pwsh
         run: |
           $pm = "$PWD\build\Release\jaupm.exe"
+          $jauc = "$PWD\build\Release\jauc.exe"
           if (!(Test-Path $pm)) { throw "jaupm.exe was not generated" }
-          Remove-Item -Recurse -Force pm-smoke -ErrorAction SilentlyContinue
-          New-Item -ItemType Directory pm-smoke | Out-Null
+          Remove-Item -Recurse -Force pm-isolated,pm-smoke -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory pm-isolated,pm-smoke | Out-Null
+          Copy-Item $pm pm-isolated\jaupm.exe
+          $v = & .\pm-isolated\jaupm.exe version
+          if ($v -ne "JauPM 0.5") { throw "standalone JauPM failed without jur.exe: $v" }
           Push-Location pm-smoke
           & $pm init iRx
           & $pm pack
           & $pm verify .\dist\iRx-0.1.0.jaup
           $env:JAU_HOME="$PWD\home"
           & $pm install .\dist\iRx-0.1.0.jaup
-          if (!(Test-Path "$env:JAU_HOME\packages\iRx\src\main.jau")) { throw "package install failed" }
+          $archive = "$env:JAU_HOME\packages\iRx\package.jaup"
+          if (!(Test-Path $archive)) { throw "protected package install failed" }
+          if (Test-Path "$env:JAU_HOME\packages\iRx\src\main.jau") { throw "installed package leaked plaintext source" }
+          @'
+import "pkg:iRx"
+print(iRx.hello["Windows"]);
+'@ | Set-Content -Encoding utf8 .\consumer.jau
+          $out = & $jauc run .\consumer.jau -I "$PWD\..\stdlib"
+          if ($out -ne "hello Windows from iRx") { throw "protected package import failed: $out" }
           Pop-Location
       - name: Setup smoke test
         shell: pwsh
@@ -84,15 +99,18 @@ jobs:
           Remove-Item -Recurse -Force install-test -ErrorAction SilentlyContinue
           .\build\Release\jau-setup.exe --prefix "$PWD\install-test" --source-root "$PWD" --no-path
           $env:JAU_HOME="$PWD\install-test"
-          & .\install-test\bin\jaupm.exe where demo
+          if (Test-Path .\install-test\bin\jaupm.cmd) { throw "stale jaupm.cmd wrapper was installed" }
+          $v = & .\install-test\bin\jaupm.exe version
+          if ($v -ne "JauPM 0.5") { throw "installed jaupm.exe failed: $v" }
       - name: Stage artifact
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force dist\stdlib,dist\tools,dist\bootstrap | Out-Null
+          New-Item -ItemType Directory -Force dist\stdlib,dist\tools,dist\bootstrap,dist\packages | Out-Null
           Copy-Item build\Release\jauc.exe,build\Release\jur.exe,build\Release\jauas.exe,build\Release\jau-setup.exe,build\Release\jaupm.exe dist\
           Copy-Item stdlib\* dist\stdlib\
           Copy-Item tools\jaupm.jau dist\tools\
           Copy-Item bootstrap\jauc_stage1.jau dist\bootstrap\
+          Copy-Item -Recurse packages\JTTP dist\packages\
           Copy-Item native-windows-x64.s dist\
       - uses: actions/upload-artifact@v4
         with: {name: jau-windows-x64, path: dist}
@@ -113,11 +131,12 @@ jobs:
       - name: Stage artifact
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force dist32\stdlib,dist32\tools,dist32\bootstrap | Out-Null
+          New-Item -ItemType Directory -Force dist32\stdlib,dist32\tools,dist32\bootstrap,dist32\packages | Out-Null
           Copy-Item build32\Release\jauc.exe,build32\Release\jur.exe,build32\Release\jauas.exe,build32\Release\jau-setup.exe,build32\Release\jaupm.exe dist32\
           Copy-Item stdlib\* dist32\stdlib\
           Copy-Item tools\jaupm.jau dist32\tools\
           Copy-Item bootstrap\jauc_stage1.jau dist32\bootstrap\
+          Copy-Item -Recurse packages\JTTP dist32\packages\
           Copy-Item native-windows-x86.s dist32\
       - uses: actions/upload-artifact@v4
         with: {name: jau-windows-x86, path: dist32}

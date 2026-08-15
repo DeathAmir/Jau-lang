@@ -22,6 +22,7 @@ Result run_embedded_executable(const std::string& executable, const std::vector<
 std::string package_pack(const std::string& root, const std::string& output);
 std::string package_extract(const std::string& archive, const std::string& destination);
 std::string package_manifest(const std::string& archive);
+std::string package_read_file(const std::string& archive, const std::string& relative_path);
 bool package_verify(const std::string& archive);
 std::string version();
 }

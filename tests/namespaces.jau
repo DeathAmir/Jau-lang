@@ -1,0 +1,6 @@
+namespace Math {
+    func add(a, b) { return a + b; }
+    func twice(a) { return a * 2; }
+}
+print(Math.add[20, 22]);
+print(Math.twice(9));

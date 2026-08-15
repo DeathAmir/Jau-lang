@@ -11,4 +11,5 @@ BIN="${TMPDIR:-/tmp}/jau_stage2_$$"
 RESULT="$($BIN)"
 rm -f "$OUT" "$BIN"
 [ "$RESULT" = "73
+Jau
 19" ]

@@ -1,0 +1,264 @@
+// -----------------------------------------------------------------------------
+// JTTP 1.0.0 - Jau HTTP Toolkit
+// -----------------------------------------------------------------------------
+// Reference networking package for the Jau programming language.
+//
+// The transport layer is provided by Jau's native http_get()/download()
+// builtins. JTTP adds URL construction, query handling, cached GET requests,
+// download helpers, response inspection and namespace-oriented APIs.
+//
+// Current runtime note:
+// Jau exposes GET/download primitives today. POST/PUT/PATCH/custom headers and
+// structured status/header access will be added when the lower-level HTTP API
+// is exposed by the runtime. JTTP does not fake unsupported transport features.
+// -----------------------------------------------------------------------------
+
+namespace JTTP {
+    func version() {
+        return "JTTP 1.0.0";
+    }
+
+    func is_http(url) {
+        return starts_with(lower(trim(url)), "http://");
+    }
+
+    func is_https(url) {
+        return starts_with(lower(trim(url)), "https://");
+    }
+
+    func is_url(url) {
+        return JTTP.is_http(url) || JTTP.is_https(url);
+    }
+
+    func strip_trailing_slash(value) {
+        let out = trim(value);
+        while (len(out) > 0 && char_at(out, len(out) - 1) == "/") {
+            out = substr(out, 0, len(out) - 1);
+        }
+        return out;
+    }
+
+    func strip_leading_slash(value) {
+        let out = trim(value);
+        while (len(out) > 0 && char_at(out, 0) == "/") {
+            out = substr(out, 1, len(out) - 1);
+        }
+        return out;
+    }
+
+    func join(base, path) {
+        if (path == "") { return base; }
+        if (JTTP.is_url(path)) { return path; }
+        return JTTP.strip_trailing_slash(base) + "/" + JTTP.strip_leading_slash(path);
+    }
+
+    func url(host, port, path) {
+        let suffix = path;
+        if (suffix == "") { suffix = "/"; }
+        if (!starts_with(suffix, "/")) { suffix = "/" + suffix; }
+        if (port == 80) { return "http://" + host + suffix; }
+        if (port == 443) { return "https://" + host + suffix; }
+        return "http://" + host + ":" + str(port) + suffix;
+    }
+
+    func scheme(url) {
+        let p = find(url, "://");
+        if (p < 0) { return ""; }
+        return lower(substr(url, 0, p));
+    }
+
+    func without_scheme(url) {
+        let p = find(url, "://");
+        if (p < 0) { return url; }
+        return substr(url, p + 3, len(url) - p - 3);
+    }
+
+    func host(url) {
+        let rest = JTTP.without_scheme(url);
+        let slash = find(rest, "/");
+        let query = find(rest, "?");
+        let fragment = find(rest, "#");
+        let end = len(rest);
+        if (slash >= 0 && slash < end) { end = slash; }
+        if (query >= 0 && query < end) { end = query; }
+        if (fragment >= 0 && fragment < end) { end = fragment; }
+        return substr(rest, 0, end);
+    }
+
+    func path(url) {
+        let rest = JTTP.without_scheme(url);
+        let slash = find(rest, "/");
+        if (slash < 0) { return "/"; }
+        let out = substr(rest, slash, len(rest) - slash);
+        let q = find(out, "?");
+        if (q >= 0) { out = substr(out, 0, q); }
+        let f = find(out, "#");
+        if (f >= 0) { out = substr(out, 0, f); }
+        if (out == "") { return "/"; }
+        return out;
+    }
+
+    func query_string(url) {
+        let q = find(url, "?");
+        if (q < 0) { return ""; }
+        let out = substr(url, q + 1, len(url) - q - 1);
+        let f = find(out, "#");
+        if (f >= 0) { out = substr(out, 0, f); }
+        return out;
+    }
+
+    func fragment(url) {
+        let p = find(url, "#");
+        if (p < 0) { return ""; }
+        return substr(url, p + 1, len(url) - p - 1);
+    }
+
+    func query_add(base, key, value) {
+        let sep = "?";
+        if (contains(base, "?")) { sep = "&"; }
+        return base + sep + key + "=" + value;
+    }
+
+    func query(base, key, value) {
+        return JTTP.query_add(base, key, value);
+    }
+
+    func query_get(url, key, fallback) {
+        let text = JTTP.query_string(url);
+        if (text == "") { return fallback; }
+        let parts = split(text, "&");
+        let i = 0;
+        while (i < len(parts)) {
+            let p = find(parts[i], "=");
+            if (p >= 0) {
+                let k = substr(parts[i], 0, p);
+                if (k == key) {
+                    return substr(parts[i], p + 1, len(parts[i]) - p - 1);
+                }
+            }
+            i = i + 1;
+        }
+        return fallback;
+    }
+
+    func fetch(url) {
+        return http_get(trim(url));
+    }
+
+    func get(url) {
+        return JTTP.fetch(url);
+    }
+
+    func text(url) {
+        return JTTP.fetch(url);
+    }
+
+    func fetch_port(host, port, path) {
+        return JTTP.fetch(JTTP.url(host, port, path));
+    }
+
+    func fetch_query(base, key, value) {
+        return JTTP.fetch(JTTP.query_add(base, key, value));
+    }
+
+    func lines(url) {
+        let body = replace(JTTP.fetch(url), "\r\n", "\n");
+        return split(body, "\n");
+    }
+
+    func download(url, output) {
+        download(url, output);
+        return file_exists(output);
+    }
+
+    func download_if_missing(url, output) {
+        if (file_exists(output)) { return true; }
+        return JTTP.download(url, output);
+    }
+
+    func cache_home() {
+        let custom = getenv("JTTP_CACHE");
+        if (custom != "") { return custom; }
+        return path_join(temp_dir(), "jttp-cache");
+    }
+
+    func cache_path(url) {
+        let root = JTTP.cache_home();
+        mkdir(root);
+        return path_join(root, str(hash64(url)) + ".cache");
+    }
+
+    func cache_has(url) {
+        return file_exists(JTTP.cache_path(url));
+    }
+
+    func cache_read(url) {
+        let file = JTTP.cache_path(url);
+        if (!file_exists(file)) { return ""; }
+        return read_file(file);
+    }
+
+    func cache_write(url, body) {
+        let file = JTTP.cache_path(url);
+        write_file(file, body);
+        return file;
+    }
+
+    func fetch_cached(url) {
+        let file = JTTP.cache_path(url);
+        if (file_exists(file)) { return read_file(file); }
+        let body = JTTP.fetch(url);
+        write_file(file, body);
+        return body;
+    }
+
+    func cache_remove(url) {
+        let file = JTTP.cache_path(url);
+        if (file_exists(file)) { remove_file(file); }
+        return true;
+    }
+
+    func cache_clear() {
+        let root = JTTP.cache_home();
+        if (file_exists(root)) { remove_tree(root); }
+        mkdir(root);
+        return true;
+    }
+
+    func json_like(body) {
+        let value = trim(body);
+        if (value == "") { return false; }
+        return starts_with(value, "{") || starts_with(value, "[");
+    }
+
+    func html_like(body) {
+        let value = lower(trim(body));
+        return starts_with(value, "<!doctype html") || starts_with(value, "<html");
+    }
+
+    func body_hash(body) {
+        return hash64(body);
+    }
+
+    func content_type(url) {
+        let value = lower(JTTP.path(url));
+        if (contains(value, ".json")) { return "application/json"; }
+        if (contains(value, ".html") || contains(value, ".htm")) { return "text/html"; }
+        if (contains(value, ".txt")) { return "text/plain"; }
+        if (contains(value, ".xml")) { return "application/xml"; }
+        if (contains(value, ".png")) { return "image/png"; }
+        if (contains(value, ".jpg") || contains(value, ".jpeg")) { return "image/jpeg"; }
+        if (contains(value, ".jaup")) { return "application/x-jau-package"; }
+        return "application/octet-stream";
+    }
+
+    func inspect(url) {
+        print("JTTP URL: " + url);
+        print("scheme: " + JTTP.scheme(url));
+        print("host: " + JTTP.host(url));
+        print("path: " + JTTP.path(url));
+        print("query: " + JTTP.query_string(url));
+        print("fragment: " + JTTP.fragment(url));
+        return 0;
+    }
+}

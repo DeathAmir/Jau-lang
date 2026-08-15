@@ -1,0 +1,2 @@
+import "../src/main.jau"
+print(JTTP.query["http://localhost/api", "q", "jau"]);

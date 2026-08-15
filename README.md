@@ -1,6 +1,6 @@
 # Jau Programming Language
 
-Jau is an experimental programming language and toolchain implemented from scratch in C++17, with a growing self-hosted layer written in Jau itself. Version **0.4.0** includes a bytecode compiler, JUR VM, x86/x86-64 AOT assembly backend, a dependency-free Linux ELF assembler (`jauas`), a Jau-written package manager (`jaupm`), a cross-platform setup program, a standard library, and a tested bootstrap compiler stage written in Jau.
+Jau is an experimental programming language and toolchain implemented from scratch in C++17, with a growing self-hosted layer written in Jau itself. Version **0.5.0** includes a bytecode compiler, JUR VM, x86/x86-64 AOT assembly backend, a dependency-free Linux ELF assembler (`jauas`), a Jau-written package manager (`jaupm`), a cross-platform setup program, a standard library, and a tested bootstrap compiler stage written in Jau.
 
 ## Language
 
@@ -24,7 +24,7 @@ while (i < len(values)) {
 }
 ```
 
-Implemented today: integers, floats, booleans, strings, null, shared arrays, indexing, mutable `let`, enforced `const`, functions, recursion, globals/locals, imports, `if/else`, `while`, `break`, `continue`, `return`, arithmetic/comparison/boolean operators and builtins.
+Implemented today: integers, floats, booleans, strings, null, shared arrays, indexing, mutable `let`, enforced `const`, functions, recursion, globals/locals, imports, namespaces/qualified calls, `if/else`, `while`, `break`, `continue`, `return`, arithmetic/comparison/boolean operators and builtins. Namespace functions support both `JTTP.fetch(url)` and the shorthand `JTTP.fetch[url]`.
 
 ## Toolchain
 
@@ -46,20 +46,22 @@ The front end performs constant folding, unary folding, algebraic simplification
 
 ## Packages
 
-JauPM is implemented in `tools/jaupm.jau`, then compiled by Jau itself into a standalone `jaupm.exe`/`jaupm` executable during the normal toolchain build.
+JauPM 0.5 is written in Jau and compiled by `jauc standalone` into a real `jaupm.exe`/`jaupm`. The default registry is `https://irautox.ir/package`, so `jaupm install JTTP` downloads `/package/JTTP`; override it with `JAU_REGISTRY` or `jaupm config set registry URL`.
 
 ```bash
-jaupm init iRx
-cd iRx
+jaupm init mylib
 jaupm pack
-jaupm verify dist/iRx-0.1.0.jaup
-jaupm install dist/iRx-0.1.0.jaup
-jaupm list
+jaupm verify dist/mylib-0.1.0.jaup
+jaupm install dist/mylib-0.1.0.jaup
+jaupm install JTTP
 ```
 
-`.jaup` is Jau's binary package archive (`JAUPKG1`) with deterministic file ordering, metadata, file sizes and per-file hashes. Extraction rejects absolute paths and `..` traversal. Installed packages live under `$JAU_HOME/packages/<name>` and are imported with `import "pkg:name"`.
+`JAUPKG2` archives keep manifest, paths and source payloads in a protected binary representation. Normal installation stores only `$JAU_HOME/packages/<name>/package.jaup`; package source is decoded directly in memory during import resolution instead of being extracted to disk. Package imports participate in `run`, `build`, `standalone`, `asm` and `native`, including AOT function emission/linking. See `docs/PACKAGES.md`.
 
-`JAU_REGISTRY` can point to a registry base URL; `jaupm install NAME` resolves `$JAU_REGISTRY/NAME/latest.jaup`. Local archives, direct package URLs, legacy source-package URLs, info/verify/unpack/update/remove/cache/doctor commands are supported.
+```jau
+import "pkg:JTTP"
+let body = JTTP.fetch["http://127.0.0.1:8080/data"];
+```
 
 ## Internet and standard library
 
@@ -67,7 +69,7 @@ Runtime networking includes a direct socket HTTP client on POSIX, redirects/chun
 
 ## Bootstrap / self-hosting
 
-`bootstrap/jauc_stage1.jau` is now an actual compiler stage written in Jau. It reads Jau source, parses an auditable bootstrap subset, emits freestanding Intel assembly, then `jauas` turns that assembly directly into an ELF executable without GCC, `as`, `ld` or NASM. CI executes the resulting stage-2 program.
+`bootstrap/jauc_stage1.jau` is now an actual compiler stage written in Jau. It reads Jau source, parses an auditable bootstrap subset with integer/string literal output and returns, emits freestanding Intel assembly, then `jauas` turns that assembly directly into an ELF executable without GCC, `as`, `ld` or NASM. CI executes the resulting stage-2 program.
 
 This is **real staged self-hosting work, but not yet full compiler parity**: the complete lexer/parser/optimizer/backend are still Stage-0 C++. Full self-hosting means porting those components to Jau and proving Stage-2/Stage-3 compiler equivalence. See `docs/BOOTSTRAP.md`.
 
@@ -82,6 +84,6 @@ ctest --test-dir build --output-on-failure
 GitHub Actions builds Linux x86-64, Linux x86, Windows x86-64 and Windows x86 artifacts.
 
 
-## JauPM 0.4
+## Bundled example package
 
-JauPM is written in Jau and built by `jauc standalone` into a real `jaupm.exe`/`jaupm` binary. It can create deterministic `.jaup` archives, verify hashes, install from local files/URLs/registries, inspect/unpack/update/remove packages, and resolve package entry points through `import "pkg:name"`. See `docs/PACKAGES.md`.
+`packages/JTTP` is the reference HTTP package. It exposes the `JTTP` namespace and uses Jau's native HTTP/download builtins, including `JTTP.fetch[...]`, `JTTP.fetch_port(...)`, download helpers and URL query helpers.

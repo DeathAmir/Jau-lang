@@ -6,9 +6,10 @@
         if(at(TK::LBrace)){auto s=std::make_unique<Stmt>();s->k=Stmt::Block;s->body=block_body();return s;}
         auto s=std::make_unique<Stmt>();s->k=Stmt::ExprS;s->expr=expr();eat(TK::Semi);return s;
     }
+    void parse_items(std::vector<std::unique_ptr<Stmt>>&v,bool until_brace){while(!at(TK::End)&&!(until_brace&&at(TK::RBrace))){if(eat(TK::Namespace)){std::string n=qualified_id();need(TK::LBrace,"expected { after namespace");std::string old=current_namespace;current_namespace=old.empty()?n:old+"."+n;parse_items(v,true);need(TK::RBrace,"expected } after namespace");eat(TK::Semi);current_namespace=old;}else v.push_back(stmt());}}
 public:
     explicit Parser(std::vector<Tok>x):t(std::move(x)){}
-    std::vector<std::unique_ptr<Stmt>> parse(){std::vector<std::unique_ptr<Stmt>> v;while(!at(TK::End))v.push_back(stmt());return v;}
+    std::vector<std::unique_ptr<Stmt>> parse(){std::vector<std::unique_ptr<Stmt>> v;parse_items(v,false);return v;}
 };
 
 enum class Op:uint8_t { Const,Null,LoadG,StoreG,LoadL,StoreL,Pop,Add,Sub,Mul,Div,Mod,Neg,Not,Eq,Ne,Lt,Le,Gt,Ge,And,Or,Jump,JumpFalse,MakeArray,Index,Call,Ret,Halt };

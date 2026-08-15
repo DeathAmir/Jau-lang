@@ -3,14 +3,39 @@ func package_home() {
     if (h == "") { return path_join(cwd(), ".jau"); }
     return h;
 }
-func package_dir(name) { return path_join(path_join(package_home(), "packages"), name); }
-func package_manifest(name) { return path_join(package_dir(name), "jau.pkg"); }
+
+func package_dir(name) {
+    return path_join(path_join(package_home(), "packages"), name);
+}
+
+func package_archive(name) {
+    return path_join(package_dir(name), "package.jaup");
+}
+
+func package_manifest(name) {
+    let archive = package_archive(name);
+    if (file_exists(archive)) { return jaup_manifest(archive); }
+    let legacy = path_join(package_dir(name), "jau.pkg");
+    if (file_exists(legacy)) { return read_file(legacy); }
+    return "";
+}
+
 func package_main(name) {
-    let mf = package_manifest(name);
-    if (file_exists(mf)) {
-        let main = manifest_value(read_file(mf), "main");
+    let archive = package_archive(name);
+    if (file_exists(archive)) {
+        let main = manifest_value(jaup_manifest(archive), "main");
+        if (main == "") { main = "main.jau"; }
+        return archive + "#" + main;
+    }
+    let legacy_manifest = path_join(package_dir(name), "jau.pkg");
+    if (file_exists(legacy_manifest)) {
+        let main = manifest_value(read_file(legacy_manifest), "main");
         if (main != "") { return path_join(package_dir(name), main); }
     }
     return path_join(package_dir(name), "main.jau");
 }
-func package_installed(name) { return file_exists(package_main(name)); }
+
+func package_installed(name) {
+    if (file_exists(package_archive(name))) { return true; }
+    return file_exists(package_main(name));
+}

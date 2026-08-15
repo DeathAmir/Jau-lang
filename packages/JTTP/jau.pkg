@@ -1,0 +1,6 @@
+name="JTTP"
+version="1.0.0"
+main="src/main.jau"
+author="DeathAmir And IrAutoX"
+description="Jau HTTP client utilities"
+dependencies=""

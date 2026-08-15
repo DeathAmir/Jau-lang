@@ -49,37 +49,44 @@ static std::string http_get_external(const std::string& url){
     auto out=read_text(tmp); std::error_code ec;fs::remove(tmp,ec);return out;
 }
 
-static std::string expand_imports_impl(const fs::path& file, const CompileOptions& opts, std::unordered_set<std::string>& seen) {
-    auto abs = fs::weakly_canonical(file).string();
-    if (seen.count(abs)) return "";
-    seen.insert(abs);
-    std::string src = read_text(file), out;
-    std::regex re(R"(^\s*import\s+\"([^\"]+)\"\s*;?\s*$)");
-    std::istringstream in(src); std::string line;
-    while(std::getline(in,line)) {
-        std::smatch m;
-        if(std::regex_match(line,m,re)) {
-            fs::path rel = m[1].str(), found;
-            std::vector<fs::path> cands;
-            std::string rels=rel.string();
-            if(rels.rfind("pkg:",0)==0){
-                std::string spec=rels.substr(4); auto slash=spec.find('/'); std::string pkg=slash==std::string::npos?spec:spec.substr(0,slash); std::string sub=slash==std::string::npos?"main.jau":spec.substr(slash+1);
-                if(const char* home=std::getenv("JAU_HOME")) cands.push_back(fs::path(home)/"packages"/pkg/sub);
-            } else cands.push_back(file.parent_path()/rel);
-            for(auto& ip:opts.import_paths) cands.push_back(fs::path(ip)/rel);
-            if(const char* home=std::getenv("JAU_HOME")) cands.push_back(fs::path(home)/"stdlib"/rel);
-            cands.push_back(fs::current_path()/"stdlib"/rel);
-            for(auto& c:cands) if(fs::exists(c)){found=c;break;}
-            if(found.empty()) throw Error("import not found: "+rel.string());
-            out += expand_imports_impl(found,opts,seen); out += "\n";
-        } else { out += line; out += '\n'; }
+
+static fs::path jau_home_path(){if(const char* home=std::getenv("JAU_HOME"))return fs::path(home);return fs::current_path()/".jau";}
+static std::string expand_imports_impl(const fs::path& file,const CompileOptions& opts,std::unordered_set<std::string>& seen);
+static std::string expand_package_impl(const fs::path& archive,const std::string& rel,const CompileOptions& opts,std::unordered_set<std::string>& seen);
+
+static std::string expand_package_spec(const std::string& spec,const CompileOptions& opts,std::unordered_set<std::string>& seen){
+    auto slash=spec.find('/');std::string pkg=slash==std::string::npos?spec:spec.substr(0,slash);std::string sub=slash==std::string::npos?"":spec.substr(slash+1);
+    fs::path dir=jau_home_path()/"packages"/pkg,archive=dir/"package.jaup";
+    if(fs::exists(archive)){
+        if(sub.empty()){auto mf=package_manifest(archive.string());sub=manifest_value(mf,"main");if(sub.empty())sub="main.jau";}
+        return expand_package_impl(archive,sub,opts,seen);
     }
+    // Compatibility with source-installed JauPM 0.3/0.4 packages.
+    if(sub.empty())sub="main.jau";fs::path legacy=dir/sub;if(fs::exists(legacy))return expand_imports_impl(legacy,opts,seen);
+    throw Error("package not installed: "+pkg+" (expected "+archive.string()+")");
+}
+static fs::path resolve_external_import(const fs::path& origin,const fs::path& rel,const CompileOptions& opts){
+    std::vector<fs::path> cands;cands.push_back(origin.parent_path()/rel);for(auto&ip:opts.import_paths)cands.push_back(fs::path(ip)/rel);cands.push_back(jau_home_path()/"stdlib"/rel);cands.push_back(fs::current_path()/"stdlib"/rel);
+    for(auto&c:cands)if(fs::exists(c))return c;return {};
+}
+static std::string expand_package_impl(const fs::path& archive,const std::string& rel,const CompileOptions& opts,std::unordered_set<std::string>& seen){
+    fs::path normalized=fs::path(rel).lexically_normal();std::string rs=normalized.generic_string();std::string key="jaup:"+fs::absolute(archive).lexically_normal().string()+"#"+rs;if(seen.count(key))return "";seen.insert(key);
+    std::string src=package_read_file(archive.string(),rs),out;std::regex re(R"(^\s*import\s+\"([^\"]+)\"\s*;?\s*$)");std::istringstream in(src);std::string line;
+    while(std::getline(in,line)){std::smatch m;if(std::regex_match(line,m,re)){std::string imp=m[1].str();if(imp.rfind("pkg:",0)==0){out+=expand_package_spec(imp.substr(4),opts,seen);out+='\n';continue;}
+            fs::path inside=(normalized.parent_path()/fs::path(imp)).lexically_normal();bool found_inside=false;try{out+=expand_package_impl(archive,inside.generic_string(),opts,seen);found_inside=true;}catch(const std::exception&e){std::string msg=e.what();if(msg.find("package file not found:")==std::string::npos)throw;}
+            if(found_inside){out+='\n';continue;}fs::path found=resolve_external_import(fs::current_path()/"__package_virtual__.jau",imp,opts);if(found.empty())throw Error("import not found in package "+archive.filename().string()+": "+imp);out+=expand_imports_impl(found,opts,seen);out+='\n';
+        }else{out+=line;out+='\n';}}
     return out;
 }
-static std::string expand_imports(const fs::path& f, const CompileOptions&o){std::unordered_set<std::string>s;return expand_imports_impl(f,o,s);}
+static std::string expand_imports_impl(const fs::path& file,const CompileOptions& opts,std::unordered_set<std::string>& seen){
+    auto abs=fs::weakly_canonical(file).string();if(seen.count(abs))return "";seen.insert(abs);std::string src=read_text(file),out;std::regex re(R"(^\s*import\s+\"([^\"]+)\"\s*;?\s*$)");std::istringstream in(src);std::string line;
+    while(std::getline(in,line)){std::smatch m;if(std::regex_match(line,m,re)){std::string imp=m[1].str();if(imp.rfind("pkg:",0)==0){out+=expand_package_spec(imp.substr(4),opts,seen);out+='\n';continue;}fs::path found=resolve_external_import(file,imp,opts);if(found.empty())throw Error("import not found: "+imp);out+=expand_imports_impl(found,opts,seen);out+='\n';}else{out+=line;out+='\n';}}
+    return out;
+}
+static std::string expand_imports(const fs::path& f,const CompileOptions&o){std::unordered_set<std::string>s;return expand_imports_impl(f,o,s);}
 
-enum class TK { End, Id, Num, Str, LParen,RParen,LBrace,RBrace,LBracket,RBracket,Comma,Semi,Plus,Minus,Star,Slash,Percent,Bang,Eq,Lt,Gt,EqEq,Ne,Le,Ge,AndAnd,OrOr,
-    Func,If,Else,While,Return,Break,Continue,Let,Const,True,False,Null };
+enum class TK { End, Id, Num, Str, LParen,RParen,LBrace,RBrace,LBracket,RBracket,Comma,Semi,Dot,Plus,Minus,Star,Slash,Percent,Bang,Eq,Lt,Gt,EqEq,Ne,Le,Ge,AndAnd,OrOr,
+    Func,Namespace,If,Else,While,Return,Break,Continue,Let,Const,True,False,Null };
 struct Tok { TK k; std::string text; int line; };
 class Lexer {
     std::string s; size_t i=0; int line=1;
@@ -93,13 +100,13 @@ public:
         if(peek()=='#'){while(peek()&&peek()!='\n')get();continue;}
         int ln=line; char c=peek(); if(!c){t.push_back({TK::End,"",ln});break;}
         if(std::isalpha((unsigned char)c)||c=='_'){std::string x;while(std::isalnum((unsigned char)peek())||peek()=='_')x+=get();
-            static const std::unordered_map<std::string,TK> kw={{"func",TK::Func},{"if",TK::If},{"else",TK::Else},{"while",TK::While},{"return",TK::Return},{"break",TK::Break},{"continue",TK::Continue},{"let",TK::Let},{"const",TK::Const},{"true",TK::True},{"false",TK::False},{"null",TK::Null}};
+            static const std::unordered_map<std::string,TK> kw={{"func",TK::Func},{"namespace",TK::Namespace},{"if",TK::If},{"else",TK::Else},{"while",TK::While},{"return",TK::Return},{"break",TK::Break},{"continue",TK::Continue},{"let",TK::Let},{"const",TK::Const},{"true",TK::True},{"false",TK::False},{"null",TK::Null}};
             auto it=kw.find(x); t.push_back({it==kw.end()?TK::Id:it->second,x,ln}); continue;}
         if(std::isdigit((unsigned char)c)){std::string x;bool dot=false;while(std::isdigit((unsigned char)peek())||(!dot&&peek()=='.')){if(peek()=='.')dot=true;x+=get();}t.push_back({TK::Num,x,ln});continue;}
         if(c=='\"'){get();std::string x;while(peek()&&peek()!='\"'){char q=get();if(q=='\\'){char e=get();if(e=='n')x+='\n';else if(e=='t')x+='\t';else if(e=='r')x+='\r';else x+=e;}else x+=q;}if(get()!='\"')throw Error("unterminated string at line "+std::to_string(ln));t.push_back({TK::Str,x,ln});continue;}
         auto two=[&](char a,char b,TK kk){if(peek()==a&&peek(1)==b){get();get();t.push_back({kk,std::string()+a+b,ln});return true;}return false;};
         if(two('=','=',TK::EqEq)||two('!','=',TK::Ne)||two('<','=',TK::Le)||two('>','=',TK::Ge)||two('&','&',TK::AndAnd)||two('|','|',TK::OrOr))continue;
-        get(); TK k; switch(c){case '(':k=TK::LParen;break;case ')':k=TK::RParen;break;case '{':k=TK::LBrace;break;case '}':k=TK::RBrace;break;case '[':k=TK::LBracket;break;case ']':k=TK::RBracket;break;case ',':k=TK::Comma;break;case ';':k=TK::Semi;break;case '+':k=TK::Plus;break;case '-':k=TK::Minus;break;case '*':k=TK::Star;break;case '/':k=TK::Slash;break;case '%':k=TK::Percent;break;case '!':k=TK::Bang;break;case '=':k=TK::Eq;break;case '<':k=TK::Lt;break;case '>':k=TK::Gt;break;default:throw Error("unexpected character at line "+std::to_string(ln));}t.push_back({k,std::string(1,c),ln});
+        get(); TK k; switch(c){case '(':k=TK::LParen;break;case ')':k=TK::RParen;break;case '{':k=TK::LBrace;break;case '}':k=TK::RBrace;break;case '[':k=TK::LBracket;break;case ']':k=TK::RBracket;break;case ',':k=TK::Comma;break;case ';':k=TK::Semi;break;case '.':k=TK::Dot;break;case '+':k=TK::Plus;break;case '-':k=TK::Minus;break;case '*':k=TK::Star;break;case '/':k=TK::Slash;break;case '%':k=TK::Percent;break;case '!':k=TK::Bang;break;case '=':k=TK::Eq;break;case '<':k=TK::Lt;break;case '>':k=TK::Gt;break;default:throw Error("unexpected character at line "+std::to_string(ln));}t.push_back({k,std::string(1,c),ln});
     }return t;}
 };
 
@@ -110,16 +117,18 @@ class Parser {
     std::vector<Tok> t; size_t i=0;
     Tok& cur(){return t[i];} bool at(TK k){return cur().k==k;} bool eat(TK k){if(at(k)){++i;return true;}return false;}
     Tok need(TK k,const char* m){if(!at(k))throw Error(std::string(m)+" at line "+std::to_string(cur().line));return t[i++];}
+    std::string current_namespace;
+    std::string qualified_id(){std::string n=need(TK::Id,"expected identifier").text;while(eat(TK::Dot))n+="."+need(TK::Id,"expected identifier after .").text;return n;}
     std::unique_ptr<Expr> primary(){
         if(eat(TK::True)){auto e=std::make_unique<Expr>();e->k=Expr::Lit;e->v=true;return e;} if(eat(TK::False)){auto e=std::make_unique<Expr>();e->k=Expr::Lit;e->v=false;return e;} if(eat(TK::Null)){auto e=std::make_unique<Expr>();e->k=Expr::Lit;return e;}
         if(at(TK::Num)){auto z=cur();++i;auto e=std::make_unique<Expr>();e->k=Expr::Lit;e->v=z.text.find('.')==std::string::npos?Value((int64_t)std::stoll(z.text)):Value(std::stod(z.text));return e;}
         if(at(TK::Str)){auto z=cur();++i;auto e=std::make_unique<Expr>();e->k=Expr::Lit;e->v=z.text;return e;}
-        if(at(TK::Id)){auto z=cur();++i;auto e=std::make_unique<Expr>();e->k=Expr::Var;e->text=z.text;return e;}
+        if(at(TK::Id)){auto e=std::make_unique<Expr>();e->k=Expr::Var;e->text=qualified_id();return e;}
         if(eat(TK::LBracket)){auto e=std::make_unique<Expr>();e->k=Expr::ArrayLit;if(!at(TK::RBracket)){do{e->args.push_back(expr());}while(eat(TK::Comma));}need(TK::RBracket,"expected ]");return e;}
         if(eat(TK::LParen)){auto e=expr();need(TK::RParen,"expected )");return e;}
         throw Error("expected expression at line "+std::to_string(cur().line));
     }
-    std::unique_ptr<Expr> call(){auto e=primary();for(;;){if(eat(TK::LParen)){auto c=std::make_unique<Expr>();c->k=Expr::Call;c->a=std::move(e);if(!at(TK::RParen)){do{c->args.push_back(expr());}while(eat(TK::Comma));}need(TK::RParen,"expected )");e=std::move(c);continue;}if(eat(TK::LBracket)){auto n=std::make_unique<Expr>();n->k=Expr::Index;n->a=std::move(e);n->b=expr();need(TK::RBracket,"expected ]");e=std::move(n);continue;}break;}return e;}
+    std::unique_ptr<Expr> call(){auto e=primary();for(;;){if(eat(TK::LParen)){auto c=std::make_unique<Expr>();c->k=Expr::Call;c->a=std::move(e);if(!at(TK::RParen)){do{c->args.push_back(expr());}while(eat(TK::Comma));}need(TK::RParen,"expected )");e=std::move(c);continue;}if(eat(TK::LBracket)){if(e->k==Expr::Var&&e->text.find('.')!=std::string::npos){auto c=std::make_unique<Expr>();c->k=Expr::Call;c->a=std::move(e);if(!at(TK::RBracket)){do{c->args.push_back(expr());}while(eat(TK::Comma));}need(TK::RBracket,"expected ]");e=std::move(c);}else{auto n=std::make_unique<Expr>();n->k=Expr::Index;n->a=std::move(e);n->b=expr();need(TK::RBracket,"expected ]");e=std::move(n);}continue;}break;}return e;}
     std::unique_ptr<Expr> unary(){if(at(TK::Bang)||at(TK::Minus)){std::string op=cur().text;++i;auto e=std::make_unique<Expr>();e->k=Expr::Unary;e->text=op;e->a=unary();return e;}return call();}
     template<class Next> std::unique_ptr<Expr> bin(Next next,std::initializer_list<TK> ks){auto e=(this->*next)();for(;;){bool m=false;for(auto k:ks)if(at(k)){m=true;break;}if(!m)break;std::string op=cur().text;++i;auto n=std::make_unique<Expr>();n->k=Expr::Binary;n->text=op;n->a=std::move(e);n->b=(this->*next)();e=std::move(n);}return e;}
     std::unique_ptr<Expr> factor(){return bin(&Parser::unary,{TK::Star,TK::Slash,TK::Percent});}
@@ -132,5 +141,5 @@ class Parser {
     std::unique_ptr<Expr> expr(){return assign();}
     std::vector<std::unique_ptr<Stmt>> block_body(){need(TK::LBrace,"expected {");std::vector<std::unique_ptr<Stmt>> v;while(!at(TK::RBrace)&&!at(TK::End))v.push_back(stmt());need(TK::RBrace,"expected }");return v;}
     std::unique_ptr<Stmt> stmt(){
-        if(eat(TK::Func)){auto s=std::make_unique<Stmt>();s->k=Stmt::FuncS;s->name=need(TK::Id,"expected function name").text;need(TK::LParen,"expected (");if(!at(TK::RParen)){do{s->params.push_back(need(TK::Id,"expected parameter").text);}while(eat(TK::Comma));}need(TK::RParen,"expected )");s->body=block_body();return s;}
+        if(eat(TK::Func)){auto s=std::make_unique<Stmt>();s->k=Stmt::FuncS;s->name=qualified_id();if(!current_namespace.empty()&&s->name.find('.')==std::string::npos)s->name=current_namespace+"."+s->name;need(TK::LParen,"expected (");if(!at(TK::RParen)){do{s->params.push_back(need(TK::Id,"expected parameter").text);}while(eat(TK::Comma));}need(TK::RParen,"expected )");s->body=block_body();return s;}
         if(eat(TK::Let)||eat(TK::Const)){bool con=t[i-1].k==TK::Const;auto s=std::make_unique<Stmt>();s->k=Stmt::VarS;s->constant=con;s->name=need(TK::Id,"expected variable name").text;if(eat(TK::Eq))s->expr=expr();else{s->expr=std::make_unique<Expr>();s->expr->k=Expr::Lit;}eat(TK::Semi);return s;}
