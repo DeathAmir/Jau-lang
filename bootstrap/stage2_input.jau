@@ -1,4 +1,6 @@
-print(73);
-print("Jau");
-print(19);
+let base = 70;
+const extra = 3;
+print(base + extra);
+print("Jau Stage-1");
+print(base - extra + 2);
 return 0;

@@ -62,12 +62,15 @@ static std::string expand_package_spec(const std::string& spec,const CompileOpti
         return expand_package_impl(archive,sub,opts,seen);
     }
     // Compatibility with source-installed JauPM 0.3/0.4 packages.
-    if(sub.empty())sub="main.jau";fs::path legacy=dir/sub;if(fs::exists(legacy))return expand_imports_impl(legacy,opts,seen);
+    if(sub.empty())sub="main.jau";
+    fs::path legacy=dir/sub;
+    if(fs::exists(legacy))return expand_imports_impl(legacy,opts,seen);
     throw Error("package not installed: "+pkg+" (expected "+archive.string()+")");
 }
 static fs::path resolve_external_import(const fs::path& origin,const fs::path& rel,const CompileOptions& opts){
     std::vector<fs::path> cands;cands.push_back(origin.parent_path()/rel);for(auto&ip:opts.import_paths)cands.push_back(fs::path(ip)/rel);cands.push_back(jau_home_path()/"stdlib"/rel);cands.push_back(fs::current_path()/"stdlib"/rel);
-    for(auto&c:cands)if(fs::exists(c))return c;return {};
+    for(auto&c:cands)if(fs::exists(c))return c;
+    return {};
 }
 static std::string expand_package_impl(const fs::path& archive,const std::string& rel,const CompileOptions& opts,std::unordered_set<std::string>& seen){
     fs::path normalized=fs::path(rel).lexically_normal();std::string rs=normalized.generic_string();std::string key="jaup:"+fs::absolute(archive).lexically_normal().string()+"#"+rs;if(seen.count(key))return "";seen.insert(key);
@@ -86,7 +89,7 @@ static std::string expand_imports_impl(const fs::path& file,const CompileOptions
 static std::string expand_imports(const fs::path& f,const CompileOptions&o){std::unordered_set<std::string>s;return expand_imports_impl(f,o,s);}
 
 enum class TK { End, Id, Num, Str, LParen,RParen,LBrace,RBrace,LBracket,RBracket,Comma,Semi,Dot,Plus,Minus,Star,Slash,Percent,Bang,Eq,Lt,Gt,EqEq,Ne,Le,Ge,AndAnd,OrOr,
-    Func,Namespace,If,Else,While,Return,Break,Continue,Let,Const,True,False,Null };
+    Func,Extern,Namespace,If,Else,While,Return,Break,Continue,Let,Const,True,False,Null };
 struct Tok { TK k; std::string text; int line; };
 class Lexer {
     std::string s; size_t i=0; int line=1;
@@ -100,7 +103,7 @@ public:
         if(peek()=='#'){while(peek()&&peek()!='\n')get();continue;}
         int ln=line; char c=peek(); if(!c){t.push_back({TK::End,"",ln});break;}
         if(std::isalpha((unsigned char)c)||c=='_'){std::string x;while(std::isalnum((unsigned char)peek())||peek()=='_')x+=get();
-            static const std::unordered_map<std::string,TK> kw={{"func",TK::Func},{"namespace",TK::Namespace},{"if",TK::If},{"else",TK::Else},{"while",TK::While},{"return",TK::Return},{"break",TK::Break},{"continue",TK::Continue},{"let",TK::Let},{"const",TK::Const},{"true",TK::True},{"false",TK::False},{"null",TK::Null}};
+            static const std::unordered_map<std::string,TK> kw={{"func",TK::Func},{"extern",TK::Extern},{"namespace",TK::Namespace},{"if",TK::If},{"else",TK::Else},{"while",TK::While},{"return",TK::Return},{"break",TK::Break},{"continue",TK::Continue},{"let",TK::Let},{"const",TK::Const},{"true",TK::True},{"false",TK::False},{"null",TK::Null}};
             auto it=kw.find(x); t.push_back({it==kw.end()?TK::Id:it->second,x,ln}); continue;}
         if(std::isdigit((unsigned char)c)){std::string x;bool dot=false;while(std::isdigit((unsigned char)peek())||(!dot&&peek()=='.')){if(peek()=='.')dot=true;x+=get();}t.push_back({TK::Num,x,ln});continue;}
         if(c=='\"'){get();std::string x;while(peek()&&peek()!='\"'){char q=get();if(q=='\\'){char e=get();if(e=='n')x+='\n';else if(e=='t')x+='\t';else if(e=='r')x+='\r';else x+=e;}else x+=q;}if(get()!='\"')throw Error("unterminated string at line "+std::to_string(ln));t.push_back({TK::Str,x,ln});continue;}
@@ -111,7 +114,7 @@ public:
 };
 
 struct Expr { enum K{Lit,Var,Assign,Binary,Unary,Call,ArrayLit,Index} k; Value v; std::string text; std::unique_ptr<Expr>a,b; std::vector<std::unique_ptr<Expr>> args; };
-struct Stmt { enum K{ExprS,VarS,Block,IfS,WhileS,ReturnS,BreakS,ContinueS,FuncS} k; std::string name; bool constant=false; std::unique_ptr<Expr> expr,cond; std::vector<std::unique_ptr<Stmt>> body,else_body; std::vector<std::string> params; };
+struct Stmt { enum K{ExprS,VarS,Block,IfS,WhileS,ReturnS,BreakS,ContinueS,FuncS} k; std::string name; bool constant=false, external=false; std::unique_ptr<Expr> expr,cond; std::vector<std::unique_ptr<Stmt>> body,else_body; std::vector<std::string> params; };
 
 class Parser {
     std::vector<Tok> t; size_t i=0;
@@ -140,6 +143,10 @@ class Parser {
     std::unique_ptr<Expr> assign(){auto e=lor();if(eat(TK::Eq)){if(e->k!=Expr::Var)throw Error("invalid assignment target");auto n=std::make_unique<Expr>();n->k=Expr::Assign;n->text=e->text;n->a=assign();return n;}return e;}
     std::unique_ptr<Expr> expr(){return assign();}
     std::vector<std::unique_ptr<Stmt>> block_body(){need(TK::LBrace,"expected {");std::vector<std::unique_ptr<Stmt>> v;while(!at(TK::RBrace)&&!at(TK::End))v.push_back(stmt());need(TK::RBrace,"expected }");return v;}
+    std::unique_ptr<Stmt> parse_func(bool external){
+        auto s=std::make_unique<Stmt>();s->k=Stmt::FuncS;s->external=external;s->name=qualified_id();if(!current_namespace.empty()&&s->name.find('.')==std::string::npos)s->name=current_namespace+"."+s->name;need(TK::LParen,"expected (");if(!at(TK::RParen)){do{s->params.push_back(need(TK::Id,"expected parameter").text);}while(eat(TK::Comma));}need(TK::RParen,"expected )");if(external){need(TK::Semi,"expected ; after extern func");}else s->body=block_body();return s;
+    }
     std::unique_ptr<Stmt> stmt(){
-        if(eat(TK::Func)){auto s=std::make_unique<Stmt>();s->k=Stmt::FuncS;s->name=qualified_id();if(!current_namespace.empty()&&s->name.find('.')==std::string::npos)s->name=current_namespace+"."+s->name;need(TK::LParen,"expected (");if(!at(TK::RParen)){do{s->params.push_back(need(TK::Id,"expected parameter").text);}while(eat(TK::Comma));}need(TK::RParen,"expected )");s->body=block_body();return s;}
+        if(eat(TK::Extern)){need(TK::Func,"expected func after extern");return parse_func(true);}
+        if(eat(TK::Func)){return parse_func(false);}
         if(eat(TK::Let)||eat(TK::Const)){bool con=t[i-1].k==TK::Const;auto s=std::make_unique<Stmt>();s->k=Stmt::VarS;s->constant=con;s->name=need(TK::Id,"expected variable name").text;if(eat(TK::Eq))s->expr=expr();else{s->expr=std::make_unique<Expr>();s->expr->k=Expr::Lit;}eat(TK::Semi);return s;}

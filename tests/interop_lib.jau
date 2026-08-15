@@ -1,0 +1,9 @@
+extern func c_mul(a, b);
+
+func add(a, b) {
+    return a + b;
+}
+
+func mixed(a, b) {
+    return c_mul(a, b) + 1;
+}

@@ -55,7 +55,7 @@ static void optimize_stmts(std::vector<std::unique_ptr<Stmt>>&v){
 }
 
 class BC {
-    Program p; std::unordered_map<std::string,int> fidx,gidx; Fun* f=nullptr; bool top=true; std::unordered_map<std::string,int> locals; int nextlocal=0;
+    Program p; std::unordered_map<std::string,int> fidx,gidx; std::unordered_set<std::string> externs; Fun* f=nullptr; bool top=true; std::unordered_map<std::string,int> locals; int nextlocal=0;
     std::unordered_set<std::string> const_globals,const_locals;
     std::vector<std::vector<int>> break_jumps, continue_jumps;
     int c(Value v){p.consts.push_back(std::move(v));return (int)p.consts.size()-1;}

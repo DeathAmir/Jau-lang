@@ -1,7 +1,7 @@
 import "pkg.jau"
 
 func usage() {
-    print("JauPM 0.5");
+    print("JauPM 0.6");
     print("  jaupm help");
     print("  jaupm version");
     print("  jaupm init NAME");
@@ -351,7 +351,7 @@ func where_package(name) {
 
 func doctor() {
     ensure_root();
-    print("JauPM 0.5 doctor");
+    print("JauPM 0.6 doctor");
     print("platform: " + platform());
     print("arch: " + arch());
     print("JAU_HOME: " + package_home());
@@ -365,7 +365,7 @@ if (argc() == 0) { usage(); }
 else {
     let cmd = arg(0);
     if (cmd == "help" || cmd == "--help" || cmd == "-h") { usage(); }
-    else if (cmd == "version" || cmd == "--version") { print("JauPM 0.5"); }
+    else if (cmd == "version" || cmd == "--version") { print("JauPM 0.6"); }
     else if (cmd == "init" || cmd == "new") {
         if (argc() < 2) { usage(); } else { init_package(arg(1)); }
     } else if (cmd == "pack") {

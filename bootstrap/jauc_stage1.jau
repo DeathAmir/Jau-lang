@@ -1,10 +1,25 @@
-// Stage-1 bootstrap compiler, implemented in Jau.
-// It compiles a deliberately auditable bootstrap subset to freestanding
-// Linux Intel assembly which Jau's own jauas turns into ELF without GCC/ld/as.
-// Stage-1 currently supports integer/string literal print calls and return.
+// Jau Stage-1 bootstrap compiler.
+//
+// This compiler stage is intentionally small enough to audit, but it is no
+// longer a fixed print-literal seed. It performs source scanning, declaration
+// collection, integer expression evaluation and target-specific assembly
+// emission entirely in Jau.
+//
+// Supported bootstrap subset:
+//   let/const NAME = integer-expression;
+//   print("string literal");
+//   print(integer-expression);
+//   return integer-expression;
+//
+// Integer expressions currently support identifiers, integer literals and
+// simple +, -, * operations. The complete production parser/optimizer/backend
+// still lives in Stage-0 C++ and is being migrated incrementally.
+
 let stage_data = "";
 let stage_label = 0;
 let stage_target = "linux-x86_64";
+let stage_names = [];
+let stage_values = [];
 
 func emit_prelude() {
     return ".intel_syntax noprefix\n.text\n.globl _start\n_start:\n";
@@ -16,66 +31,243 @@ func asm_escape(text) {
     return out;
 }
 
+func stage_set(name, value) {
+    push(stage_names, name);
+    push(stage_values, value);
+    return value;
+}
+
+func stage_has(name) {
+    let i = 0;
+    while (i < len(stage_names)) {
+        if (stage_names[i] == name) { return true; }
+        i = i + 1;
+    }
+    return false;
+}
+
+func stage_get(name) {
+    let i = 0;
+    while (i < len(stage_names)) {
+        if (stage_names[i] == name) { return stage_values[i]; }
+        i = i + 1;
+    }
+    return 0;
+}
+
+func eval_atom(raw) {
+    let value = trim(raw);
+    if (stage_has(value)) { return stage_get(value); }
+    return int(value);
+}
+
+func eval_int_expr(raw) {
+    let value = trim(raw);
+
+    let p = find(value, "+");
+    if (p > 0) {
+        return eval_int_expr(substr(value, 0, p)) +
+               eval_int_expr(substr(value, p + 1, len(value) - p - 1));
+    }
+
+    p = find(value, "-");
+    if (p > 0) {
+        return eval_int_expr(substr(value, 0, p)) -
+               eval_int_expr(substr(value, p + 1, len(value) - p - 1));
+    }
+
+    p = find(value, "*");
+    if (p > 0) {
+        return eval_int_expr(substr(value, 0, p)) *
+               eval_int_expr(substr(value, p + 1, len(value) - p - 1));
+    }
+
+    return eval_atom(value);
+}
+
+func collect_declarations(src) {
+    let lines = split(replace(src, "\r\n", "\n"), "\n");
+    let i = 0;
+
+    while (i < len(lines)) {
+        let line = trim(lines[i]);
+        let body = "";
+
+        if (starts_with(line, "let ")) {
+            body = substr(line, 4, len(line) - 4);
+        } else if (starts_with(line, "const ")) {
+            body = substr(line, 6, len(line) - 6);
+        }
+
+        if (body != "") {
+            let eq = find(body, "=");
+            if (eq > 0) {
+                let name = trim(substr(body, 0, eq));
+                let expr = trim(substr(body, eq + 1, len(body) - eq - 1));
+                if (len(expr) > 0 && char_at(expr, len(expr) - 1) == ";") {
+                    expr = substr(expr, 0, len(expr) - 1);
+                }
+                stage_set(name, eval_int_expr(expr));
+            }
+        }
+
+        i = i + 1;
+    }
+
+    return 0;
+}
+
 func emit_text(text) {
     let label = "msg" + str(stage_label);
     stage_data = stage_data + label + ": .ascii \"" + asm_escape(text) + "\\n\"\n";
     stage_label = stage_label + 1;
+
     let size = len(text) + 1;
+
     if (stage_target == "linux-x86") {
-        return "  mov eax, 4\n  mov ebx, 1\n  mov ecx, " + label + "\n  mov edx, " + str(size) + "\n  int 0x80\n";
+        return
+            "  mov eax, 4\n" +
+            "  mov ebx, 1\n" +
+            "  mov ecx, " + label + "\n" +
+            "  mov edx, " + str(size) + "\n" +
+            "  int 0x80\n";
     }
-    return "  mov rax, 1\n  mov rdi, 1\n  lea rsi, [rip+" + label + "]\n  mov rdx, " + str(size) + "\n  syscall\n";
+
+    return
+        "  mov rax, 1\n" +
+        "  mov rdi, 1\n" +
+        "  lea rsi, [rip+" + label + "]\n" +
+        "  mov rdx, " + str(size) + "\n" +
+        "  syscall\n";
 }
 
 func emit_print(raw) {
     let value = trim(raw);
-    if (len(value) >= 2 && char_at(value, 0) == "\"" && char_at(value, len(value) - 1) == "\"") {
-        return emit_text(substr(value, 1, len(value) - 2));
+
+    if (
+        len(value) >= 2 &&
+        char_at(value, 0) == "\"" &&
+        char_at(value, len(value) - 1) == "\""
+    ) {
+        return emit_text(
+            substr(value, 1, len(value) - 2)
+        );
     }
-    return emit_text(str(int(value)));
+
+    return emit_text(
+        str(eval_int_expr(value))
+    );
 }
 
 func compile_prints(src) {
     let out = "";
     let rest = src;
+
     while (true) {
         let p = find(rest, "print(");
         if (p < 0) { break; }
-        rest = substr(rest, p + 6, len(rest) - p - 6);
+
+        rest = substr(
+            rest,
+            p + 6,
+            len(rest) - p - 6
+        );
+
         let e = find(rest, ")");
         if (e < 0) { break; }
-        out = out + emit_print(substr(rest, 0, e));
-        rest = substr(rest, e + 1, len(rest) - e - 1);
+
+        out = out + emit_print(
+            substr(rest, 0, e)
+        );
+
+        rest = substr(
+            rest,
+            e + 1,
+            len(rest) - e - 1
+        );
     }
+
     return out;
 }
 
 func compile_return(src) {
     let p = find(src, "return ");
     let value = 0;
+
     if (p >= 0) {
-        let rest = substr(src, p + 7, len(src) - p - 7);
+        let rest = substr(
+            src,
+            p + 7,
+            len(src) - p - 7
+        );
+
         let e = find(rest, ";");
-        if (e < 0) { e = len(rest); }
-        value = int(trim(substr(rest, 0, e)));
+
+        if (e < 0) {
+            e = len(rest);
+        }
+
+        value = eval_int_expr(
+            trim(substr(rest, 0, e))
+        );
     }
-    if (stage_target == "linux-x86") { return "  mov eax, 1\n  mov ebx, " + str(value) + "\n  int 0x80\n"; }
-    return "  mov rax, 60\n  mov rdi, " + str(value) + "\n  syscall\n";
+
+    if (stage_target == "linux-x86") {
+        return
+            "  mov eax, 1\n" +
+            "  mov ebx, " + str(value) + "\n" +
+            "  int 0x80\n";
+    }
+
+    return
+        "  mov rax, 60\n" +
+        "  mov rdi, " + str(value) + "\n" +
+        "  syscall\n";
 }
 
 func compile_file_stage1(input, output, target) {
     stage_data = "";
     stage_label = 0;
     stage_target = target;
+    stage_names = [];
+    stage_values = [];
+
     let src = read_file(input);
-    let asm = emit_prelude() + compile_prints(src) + compile_return(src) + ".section .rodata\n" + stage_data;
+
+    collect_declarations(src);
+
+    let asm =
+        emit_prelude() +
+        compile_prints(src) +
+        compile_return(src) +
+        ".section .rodata\n" +
+        stage_data;
+
     write_file(output, asm);
-    print("stage1 compiled " + input + " -> " + output + " [" + target + "]");
+
+    print(
+        "stage1 compiled " +
+        input +
+        " -> " +
+        output +
+        " [" +
+        target +
+        "]"
+    );
+
     return 0;
 }
 
 if (argc() >= 2) {
     let target = "linux-x86_64";
-    if (argc() >= 3) { target = arg(2); }
-    compile_file_stage1(arg(0), arg(1), target);
+
+    if (argc() >= 3) {
+        target = arg(2);
+    }
+
+    compile_file_stage1(
+        arg(0),
+        arg(1),
+        target
+    );
 }

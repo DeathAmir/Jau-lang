@@ -34,3 +34,11 @@ JAU_HOME="$TMP/home" "$JAUC" asm "$TMP/app.jau" -o "$TMP/app.s" --target linux-x
 grep -q 'jau_fn_NumPkg_add' "$TMP/app.s"
 cc -no-pie "$TMP/app.s" -o "$TMP/app-native"
 [ "$("$TMP/app-native")" = "42" ]
+
+JAU_HOME="$TMP/home" "$JAUC" obj "$TMP/app.jau" -o "$TMP/pkg.o" --target linux-x86_64 -I "$ROOT/stdlib"
+cat > "$TMP/pkg_call.c" <<'C'
+extern long long jau_fn_NumPkg_add(long long, long long);
+int main(void) { return jau_fn_NumPkg_add(40, 2) == 42 ? 0 : 1; }
+C
+cc "$TMP/pkg_call.c" "$TMP/pkg.o" -o "$TMP/pkg-call"
+"$TMP/pkg-call"

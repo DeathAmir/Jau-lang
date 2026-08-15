@@ -17,7 +17,7 @@ jobs:
       - run: ./build/jauc asm tests/aot_functions.jau -o native-linux-x64.s --target linux-x86_64 && cc -no-pie native-linux-x64.s -o aot-test && printf '720\n1\n3\n4\n' > expected.txt && ./aot-test > actual.txt && diff -u expected.txt actual.txt
       - run: ./build/jauc standalone examples/fibonacci.jau -o jau-example --runtime ./build/jur && test "$(./jau-example)" = "55"
       - run: ./build/jauc run bootstrap/jauc_stage1.jau -- bootstrap/stage2_input.jau zero32.s linux-x86 && ./build/jauas zero32.s -o zero32 --target linux-x86 && file zero32 | grep -q "ELF 32-bit"
-      - run: rm -rf install-test && ./build/jau-setup --prefix "$PWD/install-test" --source-root "$PWD" --no-path && test "$(JAU_HOME="$PWD/install-test" ./install-test/bin/jaupm version)" = "JauPM 0.5"
+      - run: rm -rf install-test && ./build/jau-setup --prefix "$PWD/install-test" --source-root "$PWD" --no-path && test "$(JAU_HOME="$PWD/install-test" ./install-test/bin/jaupm version)" = "JauPM 0.6"
       - name: Stage artifact
         run: |
           mkdir -p dist/stdlib dist/tools dist/bootstrap dist/packages
@@ -75,11 +75,13 @@ jobs:
           Remove-Item -Recurse -Force pm-isolated,pm-smoke -ErrorAction SilentlyContinue
           New-Item -ItemType Directory pm-isolated,pm-smoke | Out-Null
           Copy-Item $pm pm-isolated\jaupm.exe
-          $v = & .\pm-isolated\jaupm.exe version
-          if ($v -ne "JauPM 0.5") { throw "standalone JauPM failed without jur.exe: $v" }
+          $env:PATH="$PWD\pm-isolated;$env:PATH"
           Push-Location pm-smoke
-          & $pm init iRx
-          & $pm pack
+          $v = & jaupm version
+          if ($v -ne "JauPM 0.6") { throw "standalone JauPM failed when launched by bare PATH name: $v" }
+          & jaupm init iRx
+          Set-Content -Encoding utf8 .\src\main.jau 'namespace iRx { func add(a, b) { return a + b; } }'
+          & jaupm pack
           & $pm verify .\dist\iRx-0.1.0.jaup
           $env:JAU_HOME="$PWD\home"
           & $pm install .\dist\iRx-0.1.0.jaup
@@ -87,10 +89,30 @@ jobs:
           if (!(Test-Path $archive)) { throw "protected package install failed" }
           if (Test-Path "$env:JAU_HOME\packages\iRx\src\main.jau") { throw "installed package leaked plaintext source" }
           Set-Content -Encoding utf8 .\consumer.jau 'import "pkg:iRx"'
-          Add-Content -Encoding utf8 .\consumer.jau 'print(iRx.hello["Windows"]);'
+          Add-Content -Encoding utf8 .\consumer.jau 'print(iRx.add[20, 22]);'
           $out = & $jauc run .\consumer.jau -I "$PWD\..\stdlib"
-          if ($out -ne "hello Windows from iRx") { throw "protected package import failed: $out" }
+          if ($out -ne "42") { throw "protected package import failed: $out" }
+          & $jauc asm .\consumer.jau -o .\protected.s --target windows-x86_64 -I "$PWD\..\stdlib"
+          if (!(Test-Path .\protected.s)) { throw "protected package assembly emit failed" }
+          & $jauc obj .\consumer.jau -o .\protected.obj --target windows-x86_64 -I "$PWD\..\stdlib"
+          if (!(Test-Path .\protected.obj)) { throw "protected package object build failed" }
           Pop-Location
+      - name: Jau C ABI object interop
+        shell: pwsh
+        run: |
+          .\build\Release\jauc.exe obj tests\interop_lib.jau -o jau-interop.obj --target windows-x86_64
+          Remove-Item -Recurse -Force interop-win -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory interop-win | Out-Null
+          Copy-Item tests\interop_main.c interop-win\main.c
+          $obj = (Resolve-Path .\jau-interop.obj).Path.Replace("\","/")
+          Set-Content -Encoding utf8 interop-win\CMakeLists.txt 'cmake_minimum_required(VERSION 3.16)'
+          Add-Content -Encoding utf8 interop-win\CMakeLists.txt 'project(JauInterop C)'
+          Add-Content -Encoding utf8 interop-win\CMakeLists.txt 'add_executable(interop main.c)'
+          Add-Content -Encoding utf8 interop-win\CMakeLists.txt "target_sources(interop PRIVATE `"$obj`")"
+          cmake -S interop-win -B interop-win\build -A x64
+          cmake --build interop-win\build --config Release --parallel 2
+          $out = & .\interop-win\build\Release\interop.exe
+          if ($out -ne "42 43") { throw "Jau/C ABI interop failed: $out" }
       - name: Setup smoke test
         shell: pwsh
         run: |
@@ -99,7 +121,7 @@ jobs:
           $env:JAU_HOME="$PWD\install-test"
           if (Test-Path .\install-test\bin\jaupm.cmd) { throw "stale jaupm.cmd wrapper was installed" }
           $v = & .\install-test\bin\jaupm.exe version
-          if ($v -ne "JauPM 0.5") { throw "installed jaupm.exe failed: $v" }
+          if ($v -ne "JauPM 0.6") { throw "installed jaupm.exe failed: $v" }
       - name: Stage artifact
         shell: pwsh
         run: |
@@ -126,6 +148,22 @@ jobs:
           .\build32\Release\jauc.exe standalone examples\fibonacci.jau -o jau-example32.exe --runtime .\build32\Release\jur.exe
           $out = & .\jau-example32.exe
           if ($out -ne "55") { throw "standalone output mismatch: $out" }
+      - name: Jau C ABI object interop x86
+        shell: pwsh
+        run: |
+          .\build32\Release\jauc.exe obj tests\interop_lib.jau -o jau-interop32.obj --target windows-x86
+          Remove-Item -Recurse -Force interop-win32 -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory interop-win32 | Out-Null
+          Copy-Item tests\interop_main32.c interop-win32\main.c
+          $obj = (Resolve-Path .\jau-interop32.obj).Path.Replace("\","/")
+          Set-Content -Encoding utf8 interop-win32\CMakeLists.txt 'cmake_minimum_required(VERSION 3.16)'
+          Add-Content -Encoding utf8 interop-win32\CMakeLists.txt 'project(JauInterop32 C)'
+          Add-Content -Encoding utf8 interop-win32\CMakeLists.txt 'add_executable(interop main.c)'
+          Add-Content -Encoding utf8 interop-win32\CMakeLists.txt "target_sources(interop PRIVATE `"$obj`")"
+          cmake -S interop-win32 -B interop-win32\build -A Win32
+          cmake --build interop-win32\build --config Release --parallel 2
+          $out = & .\interop-win32\build\Release\interop.exe
+          if ($out -ne "42 43") { throw "Jau/C ABI x86 interop failed: $out" }
       - name: Stage artifact
         shell: pwsh
         run: |

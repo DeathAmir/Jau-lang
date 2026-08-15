@@ -1,6 +1,6 @@
 # Jau packages and JauPM
 
-JauPM 0.5 is implemented in Jau (`tools/jaupm.jau`) and is compiled by `jauc standalone` into a real `jaupm.exe`/`jaupm` executable during the normal toolchain build.
+JauPM 0.6 is implemented in Jau (`tools/jaupm.jau`) and is compiled by `jauc standalone` into a real `jaupm.exe`/`jaupm` executable during the normal toolchain build.
 
 ## Protected package format
 
@@ -101,6 +101,7 @@ jauc run app.jau
 jauc build app.jau -o app.jbc
 jauc standalone app.jau -o app.exe
 jauc asm app.jau -o app.s --target windows-x86_64
+jauc obj app.jau -o app.obj --target windows-x86_64
 jauc native app.jau -o app --target linux-x86_64
 ```
 

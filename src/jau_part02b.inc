@@ -3,7 +3,7 @@
         case Expr::Binary:ex(e->a.get());ex(e->b.get());{static const std::unordered_map<std::string,Op>m={{"+",Op::Add},{"-",Op::Sub},{"*",Op::Mul},{"/",Op::Div},{"%",Op::Mod},{"==",Op::Eq},{"!=",Op::Ne},{"<",Op::Lt},{"<=",Op::Le},{">",Op::Gt},{">=",Op::Ge},{"&&",Op::And},{"||",Op::Or}};emit(m.at(e->text));}break;
         case Expr::ArrayLit:{for(auto&x:e->args)ex(x.get());emit(Op::MakeArray,(int)e->args.size());break;}
         case Expr::Index:ex(e->a.get());ex(e->b.get());emit(Op::Index);break;
-        case Expr::Call:{if(!e->a||e->a->k!=Expr::Var)throw Error("only named calls are supported");for(auto&x:e->args)ex(x.get());std::string n=e->a->text;static const std::unordered_map<std::string,int> bi={{"print",-1},{"clock",-2},{"len",-3},{"str",-4},{"int",-5},{"read_file",-6},{"write_file",-7},{"contains",-8},{"starts_with",-9},{"argc",-10},{"arg",-11},{"getenv",-12},{"file_exists",-13},{"mkdir",-14},{"remove_file",-15},{"path_join",-16},{"cwd",-17},{"http_get",-18},{"download",-19},{"substr",-20},{"char_at",-21},{"find",-22},{"trim",-23},{"upper",-24},{"lower",-25},{"replace",-26},{"manifest_value",-27},{"hash64",-28},{"push",-29},{"pop",-30},{"join",-31},{"split",-32},{"read_line",-33},{"sleep_ms",-34},{"platform",-35},{"arch",-36},{"temp_dir",-37},{"random_int",-38},{"list_dir",-39},{"file_size",-40},{"remove_tree",-41},{"jaup_pack",-42},{"jaup_extract",-43},{"jaup_manifest",-44},{"jaup_verify",-45}};auto b=bi.find(n);if(b!=bi.end())emit(Op::Call,b->second);else{auto it=fidx.find(n);if(it==fidx.end())throw Error("unknown function: "+n);emit(Op::Call,it->second);}break;}
+        case Expr::Call:{if(!e->a||e->a->k!=Expr::Var)throw Error("only named calls are supported");for(auto&x:e->args)ex(x.get());std::string n=e->a->text;static const std::unordered_map<std::string,int> bi={{"print",-1},{"clock",-2},{"len",-3},{"str",-4},{"int",-5},{"read_file",-6},{"write_file",-7},{"contains",-8},{"starts_with",-9},{"argc",-10},{"arg",-11},{"getenv",-12},{"file_exists",-13},{"mkdir",-14},{"remove_file",-15},{"path_join",-16},{"cwd",-17},{"http_get",-18},{"download",-19},{"substr",-20},{"char_at",-21},{"find",-22},{"trim",-23},{"upper",-24},{"lower",-25},{"replace",-26},{"manifest_value",-27},{"hash64",-28},{"push",-29},{"pop",-30},{"join",-31},{"split",-32},{"read_line",-33},{"sleep_ms",-34},{"platform",-35},{"arch",-36},{"temp_dir",-37},{"random_int",-38},{"list_dir",-39},{"file_size",-40},{"remove_tree",-41},{"jaup_pack",-42},{"jaup_extract",-43},{"jaup_manifest",-44},{"jaup_verify",-45}};auto b=bi.find(n);if(b!=bi.end())emit(Op::Call,b->second);else{auto it=fidx.find(n);if(it==fidx.end()){if(externs.count(n))throw Error("extern function is AOT/object-only: "+n);throw Error("unknown function: "+n);}emit(Op::Call,it->second);}break;}
     }}
     void st(Stmt*s){switch(s->k){
         case Stmt::ExprS:ex(s->expr.get());emit(Op::Pop);break;
@@ -19,9 +19,10 @@
 public:
     Program compile(std::vector<std::unique_ptr<Stmt>>&ast,int opt){if(opt>0)optimize_stmts(ast);
         p.funcs.push_back({"<main>",0,0,{}});fidx["<main>"]=0;
-        for(auto&s:ast)if(s->k==Stmt::FuncS){if(fidx.count(s->name))throw Error("duplicate function: "+s->name);int id=(int)p.funcs.size();fidx[s->name]=id;p.funcs.push_back({s->name,(int)s->params.size(),0,{}});}
+        for(auto&s:ast)if(s->k==Stmt::FuncS&&s->external)externs.insert(s->name);
+        for(auto&s:ast)if(s->k==Stmt::FuncS&&!s->external){if(fidx.count(s->name))throw Error("duplicate function: "+s->name);int id=(int)p.funcs.size();fidx[s->name]=id;p.funcs.push_back({s->name,(int)s->params.size(),0,{}});}
         f=&p.funcs[0];top=true;for(auto&s:ast)if(s->k!=Stmt::FuncS)st(s.get());emit(Op::Null);emit(Op::Ret);
-        for(auto&s:ast)if(s->k==Stmt::FuncS){f=&p.funcs[fidx[s->name]];top=false;locals.clear();const_locals.clear();nextlocal=0;for(auto&n:s->params)locals[n]=nextlocal++;for(auto&x:s->body)st(x.get());emit(Op::Null);emit(Op::Ret);f->locals=nextlocal;}
+        for(auto&s:ast)if(s->k==Stmt::FuncS&&!s->external){f=&p.funcs[fidx[s->name]];top=false;locals.clear();const_locals.clear();nextlocal=0;for(auto&n:s->params)locals[n]=nextlocal++;for(auto&x:s->body)st(x.get());emit(Op::Null);emit(Op::Ret);f->locals=nextlocal;}
         return p;}
 };
 

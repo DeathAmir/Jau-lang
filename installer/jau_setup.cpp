@@ -3,15 +3,24 @@
 #include <iostream>
 #include <string>
 #include <cstdlib>
+#include <vector>
 #ifdef _WIN32
 #include <windows.h>
 #endif
 namespace fs=std::filesystem;
+static fs::path current_executable(const char* argv0){
+#ifdef _WIN32
+    std::vector<char> buf(32768);
+    DWORD n=GetModuleFileNameA(nullptr,buf.data(),(DWORD)buf.size());
+    if(n>0&&n<buf.size())return fs::path(std::string(buf.data(),n));
+#endif
+    std::error_code ec;auto p=fs::absolute(argv0?argv0:"",ec);return ec?fs::path(argv0?argv0:""):p;
+}
 static void copy_if(const fs::path&a,const fs::path&b){if(!fs::exists(a))return;fs::create_directories(b.parent_path());fs::copy_file(a,b,fs::copy_options::overwrite_existing);}
 static std::string q(const std::string&s){return "\""+s+"\"";}
 int main(int argc,char**argv){
     try{
-        fs::path self=fs::absolute(argv[0]), root=self.parent_path(), source=root;
+        fs::path self=current_executable(argv[0]), root=self.parent_path(), source=root;
         fs::path prefix;
 #ifdef _WIN32
         const char* la=std::getenv("LOCALAPPDATA");prefix=la?fs::path(la)/"Jau":fs::current_path()/"Jau";

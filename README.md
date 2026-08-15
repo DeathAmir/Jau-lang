@@ -1,89 +1,288 @@
+<div align="center">
+  <img src="Jau.png" alt="Jau Programming Language" width="180" />
+
 # Jau Programming Language
 
-Jau is an experimental programming language and toolchain implemented from scratch in C++17, with a growing self-hosted layer written in Jau itself. Version **0.5.0** includes a bytecode compiler, JUR VM, x86/x86-64 AOT assembly backend, a dependency-free Linux ELF assembler (`jauas`), a Jau-written package manager (`jaupm`), a cross-platform setup program, a standard library, and a tested bootstrap compiler stage written in Jau.
+**A compact experimental language, VM, AOT compiler, package system and bootstrap toolchain.**
 
-## Language
+`JBC bytecode` · `JUR VM` · `x86/x86-64 AOT` · `ELF/COFF objects` · `JauPM` · `JAUPKG2` · `C ABI` · `self-host bootstrap`
+
+</div>
+
+> Jau 0.6 is an experimental toolchain. It is usable for language/toolchain experiments, but it is not yet a production replacement for mature systems languages.
+
+## Highlights
+
+- Functions, recursion, namespaces, arrays, strings, `let`, enforced `const`, loops, `break`, `continue` and imports.
+- JBC bytecode compiler and JUR virtual machine.
+- Intel-syntax AOT backend for Linux/Windows x86 and x86-64.
+- `jauc obj` for ELF `.o` and Windows COFF `.obj` generation.
+- C ABI interoperability in both directions for the current integer/bool AOT subset.
+- `jauas` internal assembler/object writer with Linux ELF32/ELF64 and Windows COFF x86/x86-64 support for Jau's AOT subset.
+- Jau-written `jaupm`, compiled into a standalone executable.
+- Protected `JAUPKG2` packages that remain archived after installation and are decoded in memory during compilation.
+- Configurable internet registry, defaulting to `https://irautox.ir/package`.
+- Growing Stage-1 compiler written in Jau itself.
+
+## Quick start
 
 ```jau
-import "arrays.jau"
-
-func fib(n) {
-    if (n <= 1) { return n; }
-    return fib(n - 1) + fib(n - 2);
+namespace Math {
+    func add(a, b) {
+        return a + b;
+    }
 }
 
-const name = "Jau";
-let values = [fib(8), 21, 34];
-push(values, 55);
+print(Math.add[20, 22]);
+```
 
-let i = 0;
-while (i < len(values)) {
-    if (i == 1) { i = i + 1; continue; }
-    print(values[i]);
-    i = i + 1;
+Run it:
+
+```bash
+jauc run main.jau
+```
+
+Build bytecode:
+
+```bash
+jauc build main.jau -o main.jbc
+jur main.jbc
+```
+
+Build one standalone executable:
+
+```bash
+jauc standalone main.jau -o main.exe
+```
+
+## Compiler commands
+
+| Command | Purpose |
+|---|---|
+| `jauc run file.jau` | Compile and execute source in the JUR VM |
+| `jauc build file.jau -o file.jbc` | Build JBC bytecode |
+| `jauc asm file.jau -o file.s --target TARGET` | Emit AOT Intel assembly |
+| `jauc obj file.jau -o file.o --target TARGET` | Emit relocatable ELF/COFF object |
+| `jauc native file.jau -o app --target TARGET` | Build through the target GCC/MinGW linker path |
+| `jauc standalone file.jau -o app` | Bundle bytecode with JUR into one executable |
+
+Targets:
+
+```text
+linux-x86_64
+linux-x86
+windows-x86_64
+windows-x86
+```
+
+## Jau ↔ C/C++
+
+### Call Jau from C
+
+`math.jau`:
+
+```jau
+func add(a, b) {
+    return a + b;
 }
 ```
 
-Implemented today: integers, floats, booleans, strings, null, shared arrays, indexing, mutable `let`, enforced `const`, functions, recursion, globals/locals, imports, namespaces/qualified calls, `if/else`, `while`, `break`, `continue`, `return`, arithmetic/comparison/boolean operators and builtins. Namespace functions support both `JTTP.fetch(url)` and the shorthand `JTTP.fetch[url]`.
-
-## Toolchain
-
-- `jauc build app.jau -o app.jbc` — compile to JBC bytecode.
-- `jur app.jbc` — run bytecode in JUR.
-- `jauc run app.jau -- arg1 arg2` — compile/run source with program arguments.
-- `jauc asm app.jau -o app.s --target linux-x86_64` — emit Intel/GNU assembly.
-- `jauc native app.jau -o app --target ...` — AOT assemble/link through the platform toolchain.
-- `jauc standalone app.jau -o app` — produce a single executable bundle without GCC/NASM/MinGW at application build time.
-- `jauas input.s -o app --target linux-x86_64` — Jau's own dependency-free assembler/linker for the freestanding bootstrap subset; emits ELF32/ELF64 directly.
-- `jaupm ...` — package manager whose command logic is written in Jau.
-- `jau-setup` — installs the toolchain, stdlib and JauPM and configures `JAU_HOME`/`PATH`.
-
-AOT assembly targets: `linux-x86_64`, `linux-x86`, `windows-x86_64`, `windows-x86`. The internal dependency-free `jauas` path currently targets Linux x86/x86-64. Windows gets a zero-toolchain **standalone bundle** path while the Windows AOT assembly path still uses a system linker.
-
-## Optimizer
-
-The front end performs constant folding, unary folding, algebraic simplification (`x+0`, `x*1`, zero multiplication), fixed-branch elimination, false-loop removal and unreachable-statement removal. `const` assignment is rejected during compilation. AOT now supports integer/bool functions, recursion, calls, return values, loops, break/continue and comparisons instead of only top-level expressions.
-
-## Packages
-
-JauPM 0.5 is written in Jau and compiled by `jauc standalone` into a real `jaupm.exe`/`jaupm`. The default registry is `https://irautox.ir/package`, so `jaupm install JTTP` downloads `/package/JTTP`; override it with `JAU_REGISTRY` or `jaupm config set registry URL`.
+Build an object:
 
 ```bash
-jaupm init mylib
+jauc obj math.jau -o math.o --target linux-x86_64
+```
+
+Windows x64:
+
+```cmd
+jauc obj math.jau -o math.obj --target windows-x86_64
+```
+
+Jau exports the symbol as `jau_fn_add`:
+
+```c
+extern long long jau_fn_add(long long, long long);
+```
+
+C++ callers should use `extern "C"`:
+
+```cpp
+extern "C" long long jau_fn_add(long long, long long);
+```
+
+### Call C from Jau
+
+```jau
+extern func c_mul(a, b);
+
+func mixed(a, b) {
+    return c_mul(a, b) + 1;
+}
+```
+
+Provide `c_mul` in C/C++ and link the C object with the Jau object using the normal platform linker. See [`docs/INTEROP.md`](docs/INTEROP.md).
+
+> Current AOT FFI is intentionally limited to integer/bool-style machine values. Rich strings, arrays, structs and ownership-safe FFI are future work.
+
+## `jauas` 0.6
+
+`jauas` has two roles:
+
+1. **Bootstrap executable mode** for the small freestanding Linux Stage-1 instruction subset.
+2. **Object mode** for the Jau AOT instruction subset.
+
+Examples:
+
+```bash
+jauas app.s -o app.o --target linux-x86_64 --object
+jauas app.s -o app32.o --target linux-x86 --object
+```
+
+```cmd
+jauas app.s -o app.obj --target windows-x86_64 --object
+jauas app.s -o app32.obj --target windows-x86 --object
+```
+
+Object formats:
+
+| Target | Format |
+|---|---|
+| Linux x86-64 | ELF64 relocatable |
+| Linux x86 | ELF32 relocatable |
+| Windows x86-64 | AMD64 COFF |
+| Windows x86 | i386 COFF |
+
+`jauas` is **not a general GAS/NASM-compatible assembler yet**; object mode implements the instruction/directive subset generated by Jau's current AOT backend.
+
+## JauPM 0.6
+
+JauPM command logic is written in Jau and the normal build converts it to a standalone `jaupm`/`jaupm.exe` executable.
+
+```text
+jaupm init MyLib
 jaupm pack
-jaupm verify dist/mylib-0.1.0.jaup
-jaupm install dist/mylib-0.1.0.jaup
+jaupm verify dist/MyLib-0.1.0.jaup
+jaupm install dist/MyLib-0.1.0.jaup
+jaupm list
+```
+
+The default internet registry is:
+
+```text
+https://irautox.ir/package
+```
+
+Therefore:
+
+```text
 jaupm install JTTP
 ```
 
-`JAUPKG2` archives keep manifest, paths and source payloads in a protected binary representation. Normal installation stores only `$JAU_HOME/packages/<name>/package.jaup`; package source is decoded directly in memory during import resolution instead of being extracted to disk. Package imports participate in `run`, `build`, `standalone`, `asm` and `native`, including AOT function emission/linking. See `docs/PACKAGES.md`.
+requests:
+
+```text
+https://irautox.ir/package/JTTP
+```
+
+Change the registry:
+
+```text
+jaupm config set registry https://example.org/package
+```
+
+or set `JAU_REGISTRY`.
+
+## Protected packages
+
+`jaupm pack` writes `JAUPKG2` archives. Package paths, manifest data and payloads use Jau's reversible binary protection transform. Integrity is checked against the original plaintext hashes.
+
+A normal install stores:
+
+```text
+$JAU_HOME/packages/PackageName/package.jaup
+```
+
+instead of extracting readable `src/*.jau` files. During `run`, `build`, `standalone`, `asm`, `obj` and `native`, package modules are decoded **in memory**, parsed and merged into the compilation unit.
+
+This is source protection/obfuscation, not secret-key cryptography. A sufficiently motivated reverse engineer can still study a runtime that contains the decoder.
+
+More details: [`docs/PACKAGES.md`](docs/PACKAGES.md).
+
+## JTTP
+
+The repository includes the `JTTP` (Jau HTTP) package with URL, query, GET/download, cache and response helpers built around Jau's current HTTP runtime primitives.
 
 ```jau
 import "pkg:JTTP"
-let body = JTTP.fetch["http://127.0.0.1:8080/data"];
+
+let body = JTTP.fetch["https://example.com"];
+print(body);
 ```
-
-## Internet and standard library
-
-Runtime networking includes a direct socket HTTP client on POSIX, redirects/chunked transfer decoding, downloads, and HTTPS platform fallback. TLS is intentionally not reimplemented with home-grown cryptography. The installed stdlib currently contains modules for arrays, config, environment, filesystem, HTTP, IO, math, networking, package paths, filesystem paths, randomness, strings, system information and testing.
 
 ## Bootstrap / self-hosting
 
-`bootstrap/jauc_stage1.jau` is now an actual compiler stage written in Jau. It reads Jau source, parses an auditable bootstrap subset with integer/string literal output and returns, emits freestanding Intel assembly, then `jauas` turns that assembly directly into an ELF executable without GCC, `as`, `ld` or NASM. CI executes the resulting stage-2 program.
+Jau uses staged bootstrap development:
 
-This is **real staged self-hosting work, but not yet full compiler parity**: the complete lexer/parser/optimizer/backend are still Stage-0 C++. Full self-hosting means porting those components to Jau and proving Stage-2/Stage-3 compiler equivalence. See `docs/BOOTSTRAP.md`.
+| Component | Current implementation |
+|---|---|
+| Production lexer/parser | Stage-0 C++ |
+| Optimizer | Stage-0 C++ |
+| JBC compiler / JUR VM | Stage-0 C++ |
+| Production AOT backend | Stage-0 C++ |
+| Package archive runtime | Stage-0 C++ |
+| Stage-1 source scanner/compiler | **Jau** |
+| Stage-1 declarations | **Jau** (`let` / `const`) |
+| Stage-1 integer expression evaluator | **Jau** (`+`, `-`, `*`) |
+| Stage-1 print/return compiler | **Jau** |
+| Stage-1 → Linux machine executable | Jau compiler stage + internal `jauas` |
 
-## Build
+Stage-1 now collects declarations, evaluates simple integer expressions and emits x86/x86-64 freestanding assembly for integer/string prints and integer returns.
+
+Jau does **not** claim an arbitrary self-hosting percentage. Full self-host status requires moving the production front end/backend into Jau and demonstrating Stage-2/Stage-3 equivalence. See [`docs/BOOTSTRAP.md`](docs/BOOTSTRAP.md).
+
+## Build from source
+
+Linux:
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
+cmake --build build -j2
 ctest --test-dir build --output-on-failure
 ```
 
-GitHub Actions builds Linux x86-64, Linux x86, Windows x86-64 and Windows x86 artifacts.
+Windows x64 Developer Command Prompt / PowerShell:
 
+```cmd
+cmake -S . -B build -A x64 -DJAU_ENABLE_ASM_FASTOPS=OFF
+cmake --build build --config Release --parallel 2
+ctest --test-dir build -C Release --output-on-failure
+```
 
-## Bundled example package
+The CMake build also creates the Jau-written standalone JauPM executable.
 
-`packages/JTTP` is the reference HTTP package. It exposes the `JTTP` namespace and uses Jau's native HTTP/download builtins, including `JTTP.fetch[...]`, `JTTP.fetch_port(...)`, download helpers and URL query helpers.
+## Repository layout
+
+```text
+bootstrap/    Jau-written compiler stage
+include/      public C++ toolchain API
+installer/    Jau setup/PATH installer
+packages/     bundled example packages such as JTTP
+src/          compiler, VM, AOT backend, package runtime, jauas
+stdlib/       Jau standard-library modules
+tests/        VM, AOT, package, bootstrap and C ABI tests
+tools/        Jau-written tools such as jaupm
+```
+
+## Current limitations
+
+- AOT supports the integer/bool core much more deeply than strings/arrays; richer values remain primarily VM/JBC features.
+- `extern func` is AOT/object-only today.
+- `jauas` object mode is an internal AOT-subset assembler, not a general x86 assembler.
+- `jauc native` still uses a system GCC/MinGW linker path; Jau does not yet contain a complete PE executable linker/import-table writer.
+- HTTPS uses platform/external transport rather than home-grown TLS.
+- Full self-host compiler parity is not complete.
+
+## License
+
+See [`LICENSE`](LICENSE).

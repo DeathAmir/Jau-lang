@@ -8,8 +8,8 @@ OUT="${TMPDIR:-/tmp}/jau_stage2_$$.s"
 BIN="${TMPDIR:-/tmp}/jau_stage2_$$"
 "$JAUC" run "$ROOT/bootstrap/jauc_stage1.jau" -- "$ROOT/bootstrap/stage2_input.jau" "$OUT" "$TARGET"
 "$JAUAS" "$OUT" -o "$BIN" --target "$TARGET"
-RESULT="$($BIN)"
+RESULT="$("$BIN")"
 rm -f "$OUT" "$BIN"
 [ "$RESULT" = "73
-Jau
-19" ]
+Jau Stage-1
+69" ]

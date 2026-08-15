@@ -6,6 +6,7 @@
 namespace jau {
 struct CompileOptions {
     int optimize = 2;
+    bool library_mode = false;
     std::vector<std::string> import_paths;
 };
 struct Result {
