@@ -1,0 +1,83 @@
+name: jaux-cpp
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'tests/native_extension/**'
+      - 'tests/native_extension_consumer.jau'
+      - '.github/workflows/jaux-cpp.yml'
+  workflow_dispatch:
+
+jobs:
+  cpp-extension-x64:
+    runs-on: windows-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Jau x64
+        run: |
+          cmake -S . -B build -A x64 -DJAU_ENABLE_ASM_FASTOPS=OFF
+          cmake --build build --config Release --parallel 2
+      - name: Compile C++ extension object x64
+        shell: pwsh
+        run: |
+          cmake -S tests\native_extension -B extbuild -A x64
+          cmake --build extbuild --config Release --parallel 2
+          $obj = Get-ChildItem extbuild -Recurse -Filter cppmath.obj | Select-Object -First 1
+          if (!$obj) { throw 'C++ compiler did not produce cppmath.obj' }
+          New-Item -ItemType Directory -Force extpkg\native\windows-x86_64 | Out-Null
+          Copy-Item tests\native_extension\jau.pkg extpkg\jau.pkg
+          Copy-Item -Recurse tests\native_extension\src extpkg\src
+          Copy-Item $obj.FullName extpkg\native\windows-x86_64\cppmath.obj
+      - name: Pack install and link C++ .jaux x64
+        shell: pwsh
+        run: |
+          $pm = (Resolve-Path .\build\Release\jaupm.exe).Path
+          $jauc = (Resolve-Path .\build\Release\jauc.exe).Path
+          Push-Location extpkg
+          & $pm pack dist\CppMath-1.0.0.jaux
+          Pop-Location
+          $env:JAU_HOME="$PWD\native-home"
+          & $pm install .\extpkg\dist\CppMath-1.0.0.jaux
+          & $jauc native tests\native_extension_consumer.jau -o cpp-extension.exe --target windows-x86_64
+          if (!(Test-Path .\cpp-extension.exe)) { throw 'internal linker did not create C++ extension executable' }
+          $p = Start-Process -FilePath .\cpp-extension.exe -PassThru
+          if (!$p.WaitForExit(5000)) { Stop-Process -Id $p.Id -Force; throw 'C++ .jaux x64 executable hung' }
+          if ($p.ExitCode -ne 0) { throw "C++ .jaux x64 executable failed: $($p.ExitCode)" }
+
+  cpp-extension-x86:
+    runs-on: windows-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Jau x86
+        run: |
+          cmake -S . -B build32 -A Win32 -DJAU_ENABLE_ASM_FASTOPS=OFF
+          cmake --build build32 --config Release --parallel 2
+      - name: Compile C++ extension object x86
+        shell: pwsh
+        run: |
+          cmake -S tests\native_extension -B extbuild32 -A Win32
+          cmake --build extbuild32 --config Release --parallel 2
+          $obj = Get-ChildItem extbuild32 -Recurse -Filter cppmath.obj | Select-Object -First 1
+          if (!$obj) { throw 'C++ compiler did not produce cppmath.obj' }
+          New-Item -ItemType Directory -Force extpkg32\native\windows-x86 | Out-Null
+          Copy-Item tests\native_extension\jau.pkg extpkg32\jau.pkg
+          Copy-Item -Recurse tests\native_extension\src extpkg32\src
+          Copy-Item $obj.FullName extpkg32\native\windows-x86\cppmath.obj
+      - name: Pack install and link C++ .jaux x86
+        shell: pwsh
+        run: |
+          $pm = (Resolve-Path .\build32\Release\jaupm.exe).Path
+          $jauc = (Resolve-Path .\build32\Release\jauc.exe).Path
+          Push-Location extpkg32
+          & $pm pack dist\CppMath-1.0.0.jaux
+          Pop-Location
+          $env:JAU_HOME="$PWD\native-home32"
+          & $pm install .\extpkg32\dist\CppMath-1.0.0.jaux
+          & $jauc native tests\native_extension_consumer.jau -o cpp-extension32.exe --target windows-x86
+          if (!(Test-Path .\cpp-extension32.exe)) { throw 'internal linker did not create C++ extension executable' }
+          $p = Start-Process -FilePath .\cpp-extension32.exe -PassThru
+          if (!$p.WaitForExit(5000)) { Stop-Process -Id $p.Id -Force; throw 'C++ .jaux x86 executable hung' }
+          if ($p.ExitCode -ne 0) { throw "C++ .jaux x86 executable failed: $($p.ExitCode)" }
