@@ -1,0 +1,92 @@
+name: native-cpp-extension
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/jauld*'
+      - 'src/jauc_main.cpp'
+      - 'src/package.cpp'
+      - 'tools/jaupm.jau'
+      - 'tests/native_extension/**'
+      - 'tests/native_extension_consumer.jau'
+      - '.github/workflows/native-cpp-extension.yml'
+  workflow_dispatch:
+
+jobs:
+  cpp-extension-x64:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S . -B build -A x64 -DJAU_ENABLE_ASM_FASTOPS=OFF
+      - run: cmake --build build --config Release --parallel 2
+      - name: Compile real MSVC C++ object
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force cpp-build,extpkg,native-home -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory cpp-build | Out-Null
+          $src = (Resolve-Path tests\native_extension\cppmath.cpp).Path.Replace('\','/')
+          Set-Content -Encoding utf8 cpp-build\CMakeLists.txt 'cmake_minimum_required(VERSION 3.16)'
+          Add-Content -Encoding utf8 cpp-build\CMakeLists.txt 'project(JauNativeCpp LANGUAGES CXX)'
+          Add-Content -Encoding utf8 cpp-build\CMakeLists.txt "add_library(cppmath OBJECT `"$src`")"
+          cmake -S cpp-build -B cpp-build\out -A x64
+          cmake --build cpp-build\out --config Release --parallel 2
+          $obj = Get-ChildItem cpp-build\out -Recurse -Filter cppmath.cpp.obj | Select-Object -First 1
+          if (!$obj) { throw 'MSVC x64 cppmath.obj not found' }
+          Copy-Item -Recurse tests\native_extension extpkg
+          New-Item -ItemType Directory -Force extpkg\native\windows-x86_64 | Out-Null
+          Copy-Item $obj.FullName extpkg\native\windows-x86_64\cppmath.obj
+      - name: Pack install link and execute x64 jaux
+        shell: pwsh
+        run: |
+          $pm = (Resolve-Path .\build\Release\jaupm.exe).Path
+          $jauc = (Resolve-Path .\build\Release\jauc.exe).Path
+          Push-Location extpkg
+          & $pm pack dist\CppMath-1.0.0.jaux
+          Pop-Location
+          $env:JAU_HOME="$PWD\native-home"
+          & $pm install .\extpkg\dist\CppMath-1.0.0.jaux
+          & $jauc native tests\native_extension_consumer.jau -o native-cpp-x64.exe --target windows-x86_64
+          if (!(Test-Path .\native-cpp-x64.exe)) { throw 'x64 Jau native executable missing' }
+          $p = Start-Process -FilePath .\native-cpp-x64.exe -PassThru
+          if (!$p.WaitForExit(5000)) { Stop-Process -Id $p.Id -Force; throw 'x64 native C++ extension hung' }
+          if ($p.ExitCode -ne 0) { throw "x64 native C++ extension returned $($p.ExitCode)" }
+
+  cpp-extension-x86:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S . -B build32 -A Win32 -DJAU_ENABLE_ASM_FASTOPS=OFF
+      - run: cmake --build build32 --config Release --parallel 2
+      - name: Compile real MSVC C++ object
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force cpp-build32,extpkg32,native-home32 -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory cpp-build32 | Out-Null
+          $src = (Resolve-Path tests\native_extension\cppmath.cpp).Path.Replace('\','/')
+          Set-Content -Encoding utf8 cpp-build32\CMakeLists.txt 'cmake_minimum_required(VERSION 3.16)'
+          Add-Content -Encoding utf8 cpp-build32\CMakeLists.txt 'project(JauNativeCpp32 LANGUAGES CXX)'
+          Add-Content -Encoding utf8 cpp-build32\CMakeLists.txt "add_library(cppmath OBJECT `"$src`")"
+          cmake -S cpp-build32 -B cpp-build32\out -A Win32
+          cmake --build cpp-build32\out --config Release --parallel 2
+          $obj = Get-ChildItem cpp-build32\out -Recurse -Filter cppmath.cpp.obj | Select-Object -First 1
+          if (!$obj) { throw 'MSVC x86 cppmath.obj not found' }
+          Copy-Item -Recurse tests\native_extension extpkg32
+          New-Item -ItemType Directory -Force extpkg32\native\windows-x86 | Out-Null
+          Copy-Item $obj.FullName extpkg32\native\windows-x86\cppmath.obj
+      - name: Pack install link and execute x86 jaux
+        shell: pwsh
+        run: |
+          $pm = (Resolve-Path .\build32\Release\jaupm.exe).Path
+          $jauc = (Resolve-Path .\build32\Release\jauc.exe).Path
+          Push-Location extpkg32
+          & $pm pack dist\CppMath-1.0.0.jaux
+          Pop-Location
+          $env:JAU_HOME="$PWD\native-home32"
+          & $pm install .\extpkg32\dist\CppMath-1.0.0.jaux
+          & $jauc native tests\native_extension_consumer.jau -o native-cpp-x86.exe --target windows-x86
+          if (!(Test-Path .\native-cpp-x86.exe)) { throw 'x86 Jau native executable missing' }
+          $p = Start-Process -FilePath .\native-cpp-x86.exe -PassThru
+          if (!$p.WaitForExit(5000)) { Stop-Process -Id $p.Id -Force; throw 'x86 native C++ extension hung' }
+          if ($p.ExitCode -ne 0) { throw "x86 native C++ extension returned $($p.ExitCode)" }
