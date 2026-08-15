@@ -22,17 +22,17 @@ int main(int argc,char**argv){
         for(int i=1;i<argc;++i){std::string a=argv[i];if(a=="--prefix"&&i+1<argc)prefix=argv[++i];else if(a=="--source-root"&&i+1<argc)source=argv[++i];else if(a=="--no-path")patch=false;}
         fs::create_directories(prefix/"bin");fs::create_directories(prefix/"stdlib");fs::create_directories(prefix/"tools");fs::create_directories(prefix/"packages");
 #ifdef _WIN32
-        copy_if(root/"jauc.exe",prefix/"bin"/"jauc.exe");copy_if(root/"jur.exe",prefix/"bin"/"jur.exe");copy_if(root/"jauas.exe",prefix/"bin"/"jauas.exe");copy_if(root/"jau-setup.exe",prefix/"bin"/"jau-setup.exe");
+        copy_if(root/"jauc.exe",prefix/"bin"/"jauc.exe");copy_if(root/"jur.exe",prefix/"bin"/"jur.exe");copy_if(root/"jauas.exe",prefix/"bin"/"jauas.exe");copy_if(root/"jau-setup.exe",prefix/"bin"/"jau-setup.exe");copy_if(root/"jaupm.exe",prefix/"bin"/"jaupm.exe");
 #else
-        copy_if(root/"jauc",prefix/"bin"/"jauc");copy_if(root/"jur",prefix/"bin"/"jur");copy_if(root/"jauas",prefix/"bin"/"jauas");copy_if(root/"jau-setup",prefix/"bin"/"jau-setup");
+        copy_if(root/"jauc",prefix/"bin"/"jauc");copy_if(root/"jur",prefix/"bin"/"jur");copy_if(root/"jauas",prefix/"bin"/"jauas");copy_if(root/"jau-setup",prefix/"bin"/"jau-setup");copy_if(root/"jaupm",prefix/"bin"/"jaupm");
 #endif
         if(fs::exists(source/"stdlib"))fs::copy(source/"stdlib",prefix/"stdlib",fs::copy_options::recursive|fs::copy_options::overwrite_existing);
         copy_if(source/"tools"/"jaupm.jau",prefix/"tools"/"jaupm.jau");
 #ifdef _WIN32
-        {std::ofstream f(prefix/"bin"/"jaupm.cmd");f<<"@echo off\r\n\"%~dp0jauc.exe\" run \"%JAU_HOME%\\tools\\jaupm.jau\" -I \"%JAU_HOME%\\stdlib\" -- %*\r\n";}
+        {std::ofstream f(prefix/"bin"/"jaupm.cmd");f<<"@echo off\r\n\"%~dp0jaupm.exe\" %*\r\n";}
         if(patch){HKEY key; if(RegOpenKeyExA(HKEY_CURRENT_USER,"Environment",0,KEY_READ|KEY_WRITE,&key)==ERROR_SUCCESS){std::string ph=prefix.string();RegSetValueExA(key,"JAU_HOME",0,REG_SZ,(const BYTE*)ph.c_str(),(DWORD)ph.size()+1);DWORD type=0,n=0;std::string path;if(RegQueryValueExA(key,"Path",nullptr,&type,nullptr,&n)==ERROR_SUCCESS&&n){path.resize(n);RegQueryValueExA(key,"Path",nullptr,&type,(BYTE*)path.data(),&n);if(!path.empty()&&path.back()=='\0')path.pop_back();}std::string bin=(prefix/"bin").string();if(path.find(bin)==std::string::npos){if(!path.empty()&&path.back()!=';')path+=';';path+=bin;RegSetValueExA(key,"Path",0,REG_EXPAND_SZ,(const BYTE*)path.c_str(),(DWORD)path.size()+1);}RegCloseKey(key);SendMessageTimeoutA(HWND_BROADCAST,WM_SETTINGCHANGE,0,(LPARAM)"Environment",SMTO_ABORTIFHUNG,2000,nullptr);}}
 #else
-        {std::ofstream f(prefix/"bin"/"jaupm");f<<"#!/bin/sh\nexec \"${JAU_HOME:-"<<prefix.string()<<"}/bin/jauc\" run \"${JAU_HOME:-"<<prefix.string()<<"}/tools/jaupm.jau\" -I \"${JAU_HOME:-"<<prefix.string()<<"}/stdlib\" -- \"$@\"\n";}fs::permissions(prefix/"bin"/"jaupm",fs::perms::owner_exec|fs::perms::group_exec|fs::perms::others_exec,fs::perm_options::add);
+        if(!fs::exists(prefix/"bin"/"jaupm")){std::ofstream f(prefix/"bin"/"jaupm");f<<"#!/bin/sh\nexec \"${JAU_HOME:-"<<prefix.string()<<"}/bin/jauc\" run \"${JAU_HOME:-"<<prefix.string()<<"}/tools/jaupm.jau\" -I \"${JAU_HOME:-"<<prefix.string()<<"}/stdlib\" -- \"$@\"\n";}fs::permissions(prefix/"bin"/"jaupm",fs::perms::owner_exec|fs::perms::group_exec|fs::perms::others_exec,fs::perm_options::add);
         if(patch){const char* home=std::getenv("HOME");if(home){fs::path profile=fs::path(home)/".profile";std::string old;if(fs::exists(profile)){std::ifstream in(profile);old.assign(std::istreambuf_iterator<char>(in),{});}std::string mark="# >>> Jau >>>";if(old.find(mark)==std::string::npos){std::ofstream out(profile,std::ios::app);out<<"\n"<<mark<<"\nexport JAU_HOME="<<q(prefix.string())<<"\nexport PATH=\"$JAU_HOME/bin:$PATH\"\n# <<< Jau <<<\n";}}}
 #endif
         std::cout<<"Jau installed at "<<prefix<<"\n"<<(patch?"PATH/Jau home configured. Open a new terminal.\n":"PATH was not modified.\n");return 0;

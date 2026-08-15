@@ -1,28 +1,48 @@
-# Jau packages
+# Jau packages and JauPM
 
-`jaupm` is written in Jau (`tools/jaupm.jau`). The native runtime only exposes primitive filesystem/network operations.
+JauPM 0.4 is written in Jau and is built as a standalone executable by `jauc`.
 
-Default package layout:
+## Create and pack
 
 ```text
-$JAU_HOME/
-  packages/
-    hello/
-      main.jau
-      package.meta
+jaupm init iRx
+cd iRx
+jaupm pack
 ```
 
-Import a package with `import "pkg:hello"`. A submodule can be imported with `import "pkg:hello/submodule.jau"`.
+`pack` creates `dist/iRx-0.1.0.jaup`. `.jaup` is a deterministic binary archive with the `JAUPKG1` header, package metadata, a file table, file sizes and per-file FNV-1a hashes. Symlinks are skipped and extraction rejects absolute paths and `..` traversal.
 
-Commands:
+A package manifest uses the simple Jau format:
 
 ```text
+name="iRx"
+version="1.0.0"
+main="src/main.jau"
+author="DeathAmir"
+description="Example Jau library"
+```
+
+## Commands
+
+```text
+jaupm help
+jaupm version
 jaupm init NAME
-jaupm install NAME [URL]
+jaupm pack [OUTPUT.jaup]
+jaupm install NAME|FILE.jaup|URL [URL]
 jaupm install-manifest URL
+jaupm verify FILE.jaup
+jaupm info NAME|FILE.jaup
+jaupm unpack FILE.jaup DIR
+jaupm update NAME
 jaupm remove NAME
 jaupm list
 jaupm where NAME
+jaupm cache-clean
+jaupm home
+jaupm doctor
 ```
 
-If URL is omitted, JauPM reads `JAU_REGISTRY` and resolves `JAU_REGISTRY/NAME/main.jau`. A remote manifest for `install-manifest` must contain at least `name="..."` and `source="..."`.
+Installed packages live under `$JAU_HOME/packages/<name>` and `import "pkg:<name>"` resolves the `main` entry declared by that package's `jau.pkg`.
+
+For registry installation set `JAU_REGISTRY`; `jaupm install foo` downloads `<registry>/foo/latest.jaup`, verifies it and extracts it into the package store. The older `jaupm install NAME URL_TO_MAIN.JAU` source-package form remains supported for compatibility.

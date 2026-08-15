@@ -54,5 +54,5 @@ Result run_embedded_executable(const std::string&exe,const std::vector<std::stri
     std::ifstream in(exe,std::ios::binary);if(!in)throw Error("cannot open executable");in.seekg(0,std::ios::end);auto end=in.tellg();if(end<(std::streamoff)16)throw Error("no embedded Jau payload");in.seekg(end-(std::streamoff)16);uint64_t n=0;char magic[8];in.read((char*)&n,8);in.read(magic,8);if(std::memcmp(magic,"JAUEXEC1",8))throw Error("no embedded Jau payload");if(n>(uint64_t)(end-(std::streamoff)16))throw Error("corrupt embedded payload");in.seekg(end-(std::streamoff)16-(std::streamoff)n);std::vector<char> data((size_t)n);in.read(data.data(),(std::streamsize)n);
     fs::path tmp=fs::temp_directory_path()/("jau_embedded_"+std::to_string(fnv1a64(exe))+".jbc");{std::ofstream o2(tmp,std::ios::binary);o2.write(data.data(),(std::streamsize)data.size());}auto rr=run_bytecode(tmp.string(),args);std::error_code ec;fs::remove(tmp,ec);return rr;
 }catch(const std::exception&e){return {false,e.what()};}}
-std::string version(){return "0.3.0";}
+std::string version(){return "0.4.0";}
 }

@@ -21,7 +21,7 @@ jobs:
       - name: Stage artifact
         run: |
           mkdir -p dist/stdlib dist/tools dist/bootstrap
-          cp build/jauc build/jur build/jauas build/jau-setup dist/
+          cp build/jauc build/jur build/jauas build/jau-setup build/jaupm dist/
           cp -r stdlib/* dist/stdlib/
           cp tools/jaupm.jau dist/tools/
           cp bootstrap/jauc_stage1.jau dist/bootstrap/
@@ -42,7 +42,7 @@ jobs:
       - name: Stage artifact
         run: |
           mkdir -p dist32/stdlib dist32/tools dist32/bootstrap
-          cp build32/jauc build32/jur build32/jauas build32/jau-setup dist32/
+          cp build32/jauc build32/jur build32/jauas build32/jau-setup build32/jaupm dist32/
           cp -r stdlib/* dist32/stdlib/
           cp tools/jaupm.jau dist32/tools/
           cp bootstrap/jauc_stage1.jau dist32/bootstrap/
@@ -63,18 +63,33 @@ jobs:
           .\build\Release\jauc.exe standalone examples\fibonacci.jau -o jau-example.exe --runtime .\build\Release\jur.exe
           $out = & .\jau-example.exe
           if ($out -ne "55") { throw "standalone output mismatch: $out" }
+      - name: JauPM binary package smoke test
+        shell: pwsh
+        run: |
+          $pm = "$PWD\build\Release\jaupm.exe"
+          if (!(Test-Path $pm)) { throw "jaupm.exe was not generated" }
+          Remove-Item -Recurse -Force pm-smoke -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory pm-smoke | Out-Null
+          Push-Location pm-smoke
+          & $pm init iRx
+          & $pm pack
+          & $pm verify .\dist\iRx-0.1.0.jaup
+          $env:JAU_HOME="$PWD\home"
+          & $pm install .\dist\iRx-0.1.0.jaup
+          if (!(Test-Path "$env:JAU_HOME\packages\iRx\src\main.jau")) { throw "package install failed" }
+          Pop-Location
       - name: Setup smoke test
         shell: pwsh
         run: |
           Remove-Item -Recurse -Force install-test -ErrorAction SilentlyContinue
           .\build\Release\jau-setup.exe --prefix "$PWD\install-test" --source-root "$PWD" --no-path
           $env:JAU_HOME="$PWD\install-test"
-          & .\install-test\bin\jaupm.cmd where demo
+          & .\install-test\bin\jaupm.exe where demo
       - name: Stage artifact
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist\stdlib,dist\tools,dist\bootstrap | Out-Null
-          Copy-Item build\Release\jauc.exe,build\Release\jur.exe,build\Release\jauas.exe,build\Release\jau-setup.exe dist\
+          Copy-Item build\Release\jauc.exe,build\Release\jur.exe,build\Release\jauas.exe,build\Release\jau-setup.exe,build\Release\jaupm.exe dist\
           Copy-Item stdlib\* dist\stdlib\
           Copy-Item tools\jaupm.jau dist\tools\
           Copy-Item bootstrap\jauc_stage1.jau dist\bootstrap\
@@ -99,7 +114,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist32\stdlib,dist32\tools,dist32\bootstrap | Out-Null
-          Copy-Item build32\Release\jauc.exe,build32\Release\jur.exe,build32\Release\jauas.exe,build32\Release\jau-setup.exe dist32\
+          Copy-Item build32\Release\jauc.exe,build32\Release\jur.exe,build32\Release\jauas.exe,build32\Release\jau-setup.exe,build32\Release\jaupm.exe dist32\
           Copy-Item stdlib\* dist32\stdlib\
           Copy-Item tools\jaupm.jau dist32\tools\
           Copy-Item bootstrap\jauc_stage1.jau dist32\bootstrap\

@@ -1,6 +1,6 @@
 # Jau Programming Language
 
-Jau is an experimental programming language and toolchain implemented from scratch in C++17, with a growing self-hosted layer written in Jau itself. Version **0.3.0** includes a bytecode compiler, JUR VM, x86/x86-64 AOT assembly backend, a dependency-free Linux ELF assembler (`jauas`), a Jau-written package manager (`jaupm`), a cross-platform setup program, a standard library, and a tested bootstrap compiler stage written in Jau.
+Jau is an experimental programming language and toolchain implemented from scratch in C++17, with a growing self-hosted layer written in Jau itself. Version **0.4.0** includes a bytecode compiler, JUR VM, x86/x86-64 AOT assembly backend, a dependency-free Linux ELF assembler (`jauas`), a Jau-written package manager (`jaupm`), a cross-platform setup program, a standard library, and a tested bootstrap compiler stage written in Jau.
 
 ## Language
 
@@ -46,21 +46,20 @@ The front end performs constant folding, unary folding, algebraic simplification
 
 ## Packages
 
-JauPM is in `tools/jaupm.jau` and is executed by Jau itself:
+JauPM is implemented in `tools/jaupm.jau`, then compiled by Jau itself into a standalone `jaupm.exe`/`jaupm` executable during the normal toolchain build.
 
 ```bash
-jaupm init mylib
-jaupm install demo https://example.org/demo/main.jau
+jaupm init iRx
+cd iRx
+jaupm pack
+jaupm verify dist/iRx-0.1.0.jaup
+jaupm install dist/iRx-0.1.0.jaup
 jaupm list
 ```
 
-Installed packages live at `$JAU_HOME/packages/<name>/main.jau` and are imported with:
+`.jaup` is Jau's binary package archive (`JAUPKG1`) with deterministic file ordering, metadata, file sizes and per-file hashes. Extraction rejects absolute paths and `..` traversal. Installed packages live under `$JAU_HOME/packages/<name>` and are imported with `import "pkg:name"`.
 
-```jau
-import "pkg:demo"
-```
-
-`JAU_REGISTRY` can point to a registry base URL so `jaupm install NAME` can resolve `$JAU_REGISTRY/NAME/main.jau`. JauPM also supports remote package manifests with `install-manifest`.
+`JAU_REGISTRY` can point to a registry base URL; `jaupm install NAME` resolves `$JAU_REGISTRY/NAME/latest.jaup`. Local archives, direct package URLs, legacy source-package URLs, info/verify/unpack/update/remove/cache/doctor commands are supported.
 
 ## Internet and standard library
 
@@ -81,3 +80,8 @@ ctest --test-dir build --output-on-failure
 ```
 
 GitHub Actions builds Linux x86-64, Linux x86, Windows x86-64 and Windows x86 artifacts.
+
+
+## JauPM 0.4
+
+JauPM is written in Jau and built by `jauc standalone` into a real `jaupm.exe`/`jaupm` binary. It can create deterministic `.jaup` archives, verify hashes, install from local files/URLs/registries, inspect/unpack/update/remove packages, and resolve package entry points through `import "pkg:name"`. See `docs/PACKAGES.md`.

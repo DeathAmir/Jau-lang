@@ -4,5 +4,13 @@ func package_home() {
     return h;
 }
 func package_dir(name) { return path_join(path_join(package_home(), "packages"), name); }
-func package_main(name) { return path_join(package_dir(name), "main.jau"); }
+func package_manifest(name) { return path_join(package_dir(name), "jau.pkg"); }
+func package_main(name) {
+    let mf = package_manifest(name);
+    if (file_exists(mf)) {
+        let main = manifest_value(read_file(mf), "main");
+        if (main != "") { return path_join(package_dir(name), main); }
+    }
+    return path_join(package_dir(name), "main.jau");
+}
 func package_installed(name) { return file_exists(package_main(name)); }

@@ -19,5 +19,9 @@ Result emit_assembly(const std::string& input, const std::string& output, const 
 Result native_build(const std::string& input, const std::string& output, const std::string& target, const CompileOptions& options = {});
 Result bundle_executable(const std::string& input, const std::string& output, const std::string& runtime_path, const CompileOptions& options = {});
 Result run_embedded_executable(const std::string& executable, const std::vector<std::string>& args = {});
+std::string package_pack(const std::string& root, const std::string& output);
+std::string package_extract(const std::string& archive, const std::string& destination);
+std::string package_manifest(const std::string& archive);
+bool package_verify(const std::string& archive);
 std::string version();
 }
