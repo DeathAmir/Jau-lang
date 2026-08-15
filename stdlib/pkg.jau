@@ -1,0 +1,8 @@
+func package_home() {
+    let h = getenv("JAU_HOME");
+    if (h == "") { return path_join(cwd(), ".jau"); }
+    return h;
+}
+func package_dir(name) { return path_join(path_join(package_home(), "packages"), name); }
+func package_main(name) { return path_join(package_dir(name), "main.jau"); }
+func package_installed(name) { return file_exists(package_main(name)); }

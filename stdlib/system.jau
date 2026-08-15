@@ -1,0 +1,4 @@
+func os_name() { return platform(); }
+func cpu_arch() { return arch(); }
+func sleep(milliseconds) { sleep_ms(milliseconds); return 0; }
+func temporary_dir() { return temp_dir(); }

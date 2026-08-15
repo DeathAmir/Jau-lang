@@ -1,0 +1,2 @@
+func println(value) { print(value); return 0; }
+func input() { return read_line(); }

@@ -1,7 +1,15 @@
 build/
-build32/
+build*/
+dist/
+dist32/
+install-test/
 *.jbc
 *.o
 *.obj
 *.exe
+*.s
+jau-example*
+aot-test
+expected.txt
+actual.txt
 stage1_seed.s

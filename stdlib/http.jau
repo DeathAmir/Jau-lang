@@ -1,0 +1,2 @@
+func http_get_text(url) { return http_get(url); }
+func http_save(url, output) { return download(url, output); }

@@ -1,0 +1,12 @@
+func fact(n) {
+    if (n <= 1) { return 1; }
+    return n * fact(n - 1);
+}
+print(fact(6));
+let i = 0;
+while (i < 5) {
+    i = i + 1;
+    if (i == 2) { continue; }
+    if (i == 5) { break; }
+    print(i);
+}

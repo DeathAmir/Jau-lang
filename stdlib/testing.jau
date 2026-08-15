@@ -1,0 +1,8 @@
+func assert_true(value, message) {
+    if (!value) { print("ASSERT FAILED: " + message); return false; }
+    return true;
+}
+func assert_eq(a, b, message) {
+    if (a != b) { print("ASSERT FAILED: " + message + " expected=" + str(b) + " actual=" + str(a)); return false; }
+    return true;
+}

@@ -1,0 +1,8 @@
+import "system.jau"
+import "random.jau"
+import "path.jau"
+print(os_name() != "");
+print(cpu_arch() != "");
+print(len(temporary_dir()) > 0);
+let r = random(10);
+print(r >= 0 && r < 10);

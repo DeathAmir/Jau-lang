@@ -1,0 +1,80 @@
+import "pkg.jau"
+
+func usage() {
+    print("JauPM 0.3");
+    print("  jaupm init NAME");
+    print("  jaupm install NAME [URL]");
+    print("  jaupm install-manifest URL");
+    print("  jaupm remove NAME");
+    print("  jaupm list");
+    print("  jaupm where NAME");
+    return 0;
+}
+func ensure_root() {
+    let h = package_home();
+    mkdir(h); mkdir(path_join(h, "packages"));
+    return h;
+}
+func registry_url(name) {
+    let r = getenv("JAU_REGISTRY");
+    if (r == "") { return ""; }
+    return r + "/" + name + "/main.jau";
+}
+func install_package(name, url) {
+    ensure_root();
+    if (url == "") { url = registry_url(name); }
+    if (url == "") { print("No URL supplied and JAU_REGISTRY is empty"); return 1; }
+    let dir = package_dir(name); mkdir(dir);
+    let out = path_join(dir, "main.jau");
+    print("Downloading " + name + " from " + url);
+    download(url, out);
+    write_file(path_join(dir, "package.meta"), "name=\"" + name + "\"\nsource=\"" + url + "\"\nhash=\"" + str(hash64(read_file(out))) + "\"\n");
+    print("Installed " + name + " -> " + out);
+    return 0;
+}
+func install_manifest(url) {
+    let text = http_get(url);
+    let name = manifest_value(text, "name");
+    let source = manifest_value(text, "source");
+    if (name == "" || source == "") { print("Invalid package manifest: name/source required"); return 1; }
+    return install_package(name, source);
+}
+func remove_package(name) {
+    let main = package_main(name);
+    let meta = path_join(package_dir(name), "package.meta");
+    if (file_exists(main)) { remove_file(main); }
+    if (file_exists(meta)) { remove_file(meta); }
+    print("Removed package files for " + name);
+    return 0;
+}
+func list_packages() {
+    ensure_root();
+    let items = list_dir(path_join(package_home(), "packages"));
+    let i = 0;
+    while (i < len(items)) { print(items[i]); i = i + 1; }
+    return 0;
+}
+func init_package(name) {
+    let manifest = "name=\"" + name + "\"\nversion=\"0.1.0\"\nmain=\"main.jau\"\n";
+    write_file("jau.pkg", manifest);
+    if (!file_exists("main.jau")) { write_file("main.jau", "func main() { print(\"hello from " + name + "\"); return 0; }\nmain();\n"); }
+    print("Created jau.pkg and main.jau"); return 0;
+}
+
+if (argc() == 0) { usage(); }
+else {
+    let cmd = arg(0);
+    if (cmd == "init") {
+        if (argc() < 2) { usage(); } else { init_package(arg(1)); }
+    } else if (cmd == "install") {
+        if (argc() < 2) { usage(); }
+        else { let url = ""; if (argc() >= 3) { url = arg(2); } install_package(arg(1), url); }
+    } else if (cmd == "install-manifest") {
+        if (argc() < 2) { usage(); } else { install_manifest(arg(1)); }
+    } else if (cmd == "remove") {
+        if (argc() < 2) { usage(); } else { remove_package(arg(1)); }
+    } else if (cmd == "list") { list_packages(); }
+    else if (cmd == "where") {
+        if (argc() < 2) { usage(); } else { print(package_main(arg(1))); }
+    } else { usage(); }
+}

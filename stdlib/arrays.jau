@@ -1,0 +1,5 @@
+func array_push(a, value) { return push(a, value); }
+func array_pop(a) { return pop(a); }
+func array_join(a, sep) { return join(a, sep); }
+func string_split(s, sep) { return split(s, sep); }
+func array_empty(a) { return len(a) == 0; }

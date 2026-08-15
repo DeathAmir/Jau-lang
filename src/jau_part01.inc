@@ -4,6 +4,51 @@
 static std::string read_text(const fs::path& p) { std::ifstream f(p, std::ios::binary); if(!f) throw Error("cannot open " + p.string()); std::ostringstream s; s<<f.rdbuf(); return s.str(); }
 static void write_text(const fs::path& p, const std::string& s) { if(p.has_parent_path()) fs::create_directories(p.parent_path()); std::ofstream f(p, std::ios::binary); if(!f) throw Error("cannot write " + p.string()); f<<s; }
 
+static std::string shell_quote(const std::string& x) {
+#ifdef _WIN32
+    std::string r="\""; for(char c:x){ if(c=='\"') r+="\\\""; else r+=c; } return r+"\"";
+#else
+    std::string r="'"; for(char c:x){ if(c=='\'') r+="'\\''"; else r+=c; } return r+"'";
+#endif
+}
+static std::string trim_copy(std::string x){size_t a=0,b=x.size();while(a<b&&std::isspace((unsigned char)x[a]))++a;while(b>a&&std::isspace((unsigned char)x[b-1]))--b;return x.substr(a,b-a);}
+static std::string lower_copy(std::string x){for(char&c:x)c=(char)std::tolower((unsigned char)c);return x;}
+static std::string upper_copy(std::string x){for(char&c:x)c=(char)std::toupper((unsigned char)c);return x;}
+static std::string replace_all(std::string s,const std::string&a,const std::string&b){if(a.empty())return s;size_t p=0;while((p=s.find(a,p))!=std::string::npos){s.replace(p,a.size(),b);p+=b.size();}return s;}
+static uint64_t fnv1a64(const std::string&s){uint64_t h=1469598103934665603ull;for(unsigned char c:s){h^=c;h*=1099511628211ull;}return h;}
+static std::string manifest_value(const std::string& text,const std::string& key){std::istringstream in(text);std::string line;while(std::getline(in,line)){line=trim_copy(line);if(line.empty()||line[0]=='#')continue;auto q=line.find('=');if(q==std::string::npos)continue;if(trim_copy(line.substr(0,q))==key){auto v=trim_copy(line.substr(q+1));if(v.size()>=2&&v.front()=='\"'&&v.back()=='\"')v=v.substr(1,v.size()-2);return v;}}return "";}
+#ifndef _WIN32
+static std::string decode_chunked(const std::string& body){std::string out;size_t p=0;while(p<body.size()){auto e=body.find("\r\n",p);if(e==std::string::npos)break;std::string hs=body.substr(p,e-p);size_t semi=hs.find(';');if(semi!=std::string::npos)hs=hs.substr(0,semi);size_t n=0;std::stringstream ss;ss<<std::hex<<hs;ss>>n;p=e+2;if(n==0)break;if(p+n>body.size())throw Error("truncated chunked HTTP body");out.append(body,p,n);p+=n;if(body.substr(p,2)=="\r\n")p+=2;}return out;}
+static std::string http_get_plain_posix(const std::string& url,int redirects=0){
+    if(redirects>5)throw Error("too many HTTP redirects");
+    if(url.rfind("http://",0)!=0)throw Error("plain HTTP transport requires http:// URL");
+    std::string u=url.substr(7),hostport,path="/";auto slash=u.find('/');if(slash!=std::string::npos){hostport=u.substr(0,slash);path=u.substr(slash);}else hostport=u;
+    std::string host=hostport,port="80";auto colon=hostport.rfind(':');if(colon!=std::string::npos&&hostport.find(':')==colon){host=hostport.substr(0,colon);port=hostport.substr(colon+1);}
+    addrinfo hints{},*res=nullptr;hints.ai_socktype=SOCK_STREAM;hints.ai_family=AF_UNSPEC;if(getaddrinfo(host.c_str(),port.c_str(),&hints,&res)!=0)throw Error("DNS lookup failed: "+host);
+    int fd=-1;for(auto*r=res;r;r=r->ai_next){fd=::socket(r->ai_family,r->ai_socktype,r->ai_protocol);if(fd<0)continue;if(::connect(fd,r->ai_addr,r->ai_addrlen)==0)break;::close(fd);fd=-1;}freeaddrinfo(res);if(fd<0)throw Error("TCP connect failed: "+host+":"+port);
+    std::string req="GET "+path+" HTTP/1.1\r\nHost: "+host+"\r\nUser-Agent: Jau/0.3\r\nAccept: */*\r\nConnection: close\r\n\r\n";size_t sent=0;while(sent<req.size()){ssize_t n=::send(fd,req.data()+sent,req.size()-sent,0);if(n<=0){::close(fd);throw Error("HTTP send failed");}sent+=(size_t)n;}
+    std::string raw;std::array<char,8192>buf{};for(;;){ssize_t n=::recv(fd,buf.data(),buf.size(),0);if(n<0){::close(fd);throw Error("HTTP receive failed");}if(n==0)break;raw.append(buf.data(),(size_t)n);}::close(fd);
+    auto split=raw.find("\r\n\r\n");if(split==std::string::npos)throw Error("malformed HTTP response");std::string head=raw.substr(0,split),body=raw.substr(split+4);auto line=head.find("\r\n");std::string status=head.substr(0,line);int code=0;{std::istringstream is(status);std::string proto;is>>proto>>code;}
+    if(code>=300&&code<400){std::istringstream hs(head);std::string ln;while(std::getline(hs,ln)){if(!ln.empty()&&ln.back()=='\r')ln.pop_back();auto low=lower_copy(ln);if(low.rfind("location:",0)==0){auto loc=trim_copy(ln.substr(9));if(loc.rfind("http://",0)==0)return http_get_plain_posix(loc,redirects+1);throw Error("redirect requires HTTPS transport: "+loc);}}}
+    if(code<200||code>=300)throw Error("HTTP status "+std::to_string(code));
+    if(lower_copy(head).find("transfer-encoding: chunked")!=std::string::npos)body=decode_chunked(body);
+    return body;
+}
+#endif
+static std::string http_get_external(const std::string& url){
+#ifndef _WIN32
+    if(url.rfind("http://",0)==0)return http_get_plain_posix(url);
+#endif
+    fs::path tmp=fs::temp_directory_path()/("jau_http_"+std::to_string(fnv1a64(url))+".tmp");
+#ifdef _WIN32
+    std::string cmd="powershell -NoProfile -ExecutionPolicy Bypass -Command \"$ProgressPreference='SilentlyContinue';Invoke-WebRequest -UseBasicParsing -Uri '"+replace_all(url,"'","''")+"' -OutFile '"+replace_all(tmp.string(),"'","''")+"'\"";
+#else
+    std::string cmd="curl -LfsS --connect-timeout 15 --max-time 60 "+shell_quote(url)+" -o "+shell_quote(tmp.string());
+#endif
+    int rc=std::system(cmd.c_str()); if(rc!=0) throw Error("HTTP download failed for "+url+" (platform HTTPS transport unavailable or request failed)");
+    auto out=read_text(tmp); std::error_code ec;fs::remove(tmp,ec);return out;
+}
+
 static std::string expand_imports_impl(const fs::path& file, const CompileOptions& opts, std::unordered_set<std::string>& seen) {
     auto abs = fs::weakly_canonical(file).string();
     if (seen.count(abs)) return "";
@@ -15,7 +60,12 @@ static std::string expand_imports_impl(const fs::path& file, const CompileOption
         std::smatch m;
         if(std::regex_match(line,m,re)) {
             fs::path rel = m[1].str(), found;
-            std::vector<fs::path> cands = {file.parent_path()/rel};
+            std::vector<fs::path> cands;
+            std::string rels=rel.string();
+            if(rels.rfind("pkg:",0)==0){
+                std::string spec=rels.substr(4); auto slash=spec.find('/'); std::string pkg=slash==std::string::npos?spec:spec.substr(0,slash); std::string sub=slash==std::string::npos?"main.jau":spec.substr(slash+1);
+                if(const char* home=std::getenv("JAU_HOME")) cands.push_back(fs::path(home)/"packages"/pkg/sub);
+            } else cands.push_back(file.parent_path()/rel);
             for(auto& ip:opts.import_paths) cands.push_back(fs::path(ip)/rel);
             if(const char* home=std::getenv("JAU_HOME")) cands.push_back(fs::path(home)/"stdlib"/rel);
             cands.push_back(fs::current_path()/"stdlib"/rel);
@@ -28,8 +78,8 @@ static std::string expand_imports_impl(const fs::path& file, const CompileOption
 }
 static std::string expand_imports(const fs::path& f, const CompileOptions&o){std::unordered_set<std::string>s;return expand_imports_impl(f,o,s);}
 
-enum class TK { End, Id, Num, Str, LParen,RParen,LBrace,RBrace,Comma,Semi,Plus,Minus,Star,Slash,Percent,Bang,Eq,Lt,Gt,EqEq,Ne,Le,Ge,AndAnd,OrOr,
-    Func,If,Else,While,Return,Let,Const,True,False,Null };
+enum class TK { End, Id, Num, Str, LParen,RParen,LBrace,RBrace,LBracket,RBracket,Comma,Semi,Plus,Minus,Star,Slash,Percent,Bang,Eq,Lt,Gt,EqEq,Ne,Le,Ge,AndAnd,OrOr,
+    Func,If,Else,While,Return,Break,Continue,Let,Const,True,False,Null };
 struct Tok { TK k; std::string text; int line; };
 class Lexer {
     std::string s; size_t i=0; int line=1;
@@ -43,18 +93,18 @@ public:
         if(peek()=='#'){while(peek()&&peek()!='\n')get();continue;}
         int ln=line; char c=peek(); if(!c){t.push_back({TK::End,"",ln});break;}
         if(std::isalpha((unsigned char)c)||c=='_'){std::string x;while(std::isalnum((unsigned char)peek())||peek()=='_')x+=get();
-            static const std::unordered_map<std::string,TK> kw={{"func",TK::Func},{"if",TK::If},{"else",TK::Else},{"while",TK::While},{"return",TK::Return},{"let",TK::Let},{"const",TK::Const},{"true",TK::True},{"false",TK::False},{"null",TK::Null}};
+            static const std::unordered_map<std::string,TK> kw={{"func",TK::Func},{"if",TK::If},{"else",TK::Else},{"while",TK::While},{"return",TK::Return},{"break",TK::Break},{"continue",TK::Continue},{"let",TK::Let},{"const",TK::Const},{"true",TK::True},{"false",TK::False},{"null",TK::Null}};
             auto it=kw.find(x); t.push_back({it==kw.end()?TK::Id:it->second,x,ln}); continue;}
         if(std::isdigit((unsigned char)c)){std::string x;bool dot=false;while(std::isdigit((unsigned char)peek())||(!dot&&peek()=='.')){if(peek()=='.')dot=true;x+=get();}t.push_back({TK::Num,x,ln});continue;}
-        if(c=='"'){get();std::string x;while(peek()&&peek()!='"'){char q=get();if(q=='\\'){char e=get();if(e=='n')x+='\n';else if(e=='t')x+='\t';else if(e=='r')x+='\r';else x+=e;}else x+=q;}if(get()!='"')throw Error("unterminated string at line "+std::to_string(ln));t.push_back({TK::Str,x,ln});continue;}
+        if(c=='\"'){get();std::string x;while(peek()&&peek()!='\"'){char q=get();if(q=='\\'){char e=get();if(e=='n')x+='\n';else if(e=='t')x+='\t';else if(e=='r')x+='\r';else x+=e;}else x+=q;}if(get()!='\"')throw Error("unterminated string at line "+std::to_string(ln));t.push_back({TK::Str,x,ln});continue;}
         auto two=[&](char a,char b,TK kk){if(peek()==a&&peek(1)==b){get();get();t.push_back({kk,std::string()+a+b,ln});return true;}return false;};
         if(two('=','=',TK::EqEq)||two('!','=',TK::Ne)||two('<','=',TK::Le)||two('>','=',TK::Ge)||two('&','&',TK::AndAnd)||two('|','|',TK::OrOr))continue;
-        get(); TK k; switch(c){case '(':k=TK::LParen;break;case ')':k=TK::RParen;break;case '{':k=TK::LBrace;break;case '}':k=TK::RBrace;break;case ',':k=TK::Comma;break;case ';':k=TK::Semi;break;case '+':k=TK::Plus;break;case '-':k=TK::Minus;break;case '*':k=TK::Star;break;case '/':k=TK::Slash;break;case '%':k=TK::Percent;break;case '!':k=TK::Bang;break;case '=':k=TK::Eq;break;case '<':k=TK::Lt;break;case '>':k=TK::Gt;break;default:throw Error("unexpected character at line "+std::to_string(ln));}t.push_back({k,std::string(1,c),ln});
+        get(); TK k; switch(c){case '(':k=TK::LParen;break;case ')':k=TK::RParen;break;case '{':k=TK::LBrace;break;case '}':k=TK::RBrace;break;case '[':k=TK::LBracket;break;case ']':k=TK::RBracket;break;case ',':k=TK::Comma;break;case ';':k=TK::Semi;break;case '+':k=TK::Plus;break;case '-':k=TK::Minus;break;case '*':k=TK::Star;break;case '/':k=TK::Slash;break;case '%':k=TK::Percent;break;case '!':k=TK::Bang;break;case '=':k=TK::Eq;break;case '<':k=TK::Lt;break;case '>':k=TK::Gt;break;default:throw Error("unexpected character at line "+std::to_string(ln));}t.push_back({k,std::string(1,c),ln});
     }return t;}
 };
 
-struct Expr { enum K{Lit,Var,Assign,Binary,Unary,Call} k; Value v; std::string text; std::unique_ptr<Expr>a,b; std::vector<std::unique_ptr<Expr>> args; };
-struct Stmt { enum K{ExprS,VarS,Block,IfS,WhileS,ReturnS,FuncS} k; std::string name; bool constant=false; std::unique_ptr<Expr> expr,cond; std::vector<std::unique_ptr<Stmt>> body,else_body; std::vector<std::string> params; };
+struct Expr { enum K{Lit,Var,Assign,Binary,Unary,Call,ArrayLit,Index} k; Value v; std::string text; std::unique_ptr<Expr>a,b; std::vector<std::unique_ptr<Expr>> args; };
+struct Stmt { enum K{ExprS,VarS,Block,IfS,WhileS,ReturnS,BreakS,ContinueS,FuncS} k; std::string name; bool constant=false; std::unique_ptr<Expr> expr,cond; std::vector<std::unique_ptr<Stmt>> body,else_body; std::vector<std::string> params; };
 
 class Parser {
     std::vector<Tok> t; size_t i=0;
@@ -65,10 +115,11 @@ class Parser {
         if(at(TK::Num)){auto z=cur();++i;auto e=std::make_unique<Expr>();e->k=Expr::Lit;e->v=z.text.find('.')==std::string::npos?Value((int64_t)std::stoll(z.text)):Value(std::stod(z.text));return e;}
         if(at(TK::Str)){auto z=cur();++i;auto e=std::make_unique<Expr>();e->k=Expr::Lit;e->v=z.text;return e;}
         if(at(TK::Id)){auto z=cur();++i;auto e=std::make_unique<Expr>();e->k=Expr::Var;e->text=z.text;return e;}
+        if(eat(TK::LBracket)){auto e=std::make_unique<Expr>();e->k=Expr::ArrayLit;if(!at(TK::RBracket)){do{e->args.push_back(expr());}while(eat(TK::Comma));}need(TK::RBracket,"expected ]");return e;}
         if(eat(TK::LParen)){auto e=expr();need(TK::RParen,"expected )");return e;}
         throw Error("expected expression at line "+std::to_string(cur().line));
     }
-    std::unique_ptr<Expr> call(){auto e=primary();while(eat(TK::LParen)){auto c=std::make_unique<Expr>();c->k=Expr::Call;c->a=std::move(e);if(!at(TK::RParen)){do{c->args.push_back(expr());}while(eat(TK::Comma));}need(TK::RParen,"expected )");e=std::move(c);}return e;}
+    std::unique_ptr<Expr> call(){auto e=primary();for(;;){if(eat(TK::LParen)){auto c=std::make_unique<Expr>();c->k=Expr::Call;c->a=std::move(e);if(!at(TK::RParen)){do{c->args.push_back(expr());}while(eat(TK::Comma));}need(TK::RParen,"expected )");e=std::move(c);continue;}if(eat(TK::LBracket)){auto n=std::make_unique<Expr>();n->k=Expr::Index;n->a=std::move(e);n->b=expr();need(TK::RBracket,"expected ]");e=std::move(n);continue;}break;}return e;}
     std::unique_ptr<Expr> unary(){if(at(TK::Bang)||at(TK::Minus)){std::string op=cur().text;++i;auto e=std::make_unique<Expr>();e->k=Expr::Unary;e->text=op;e->a=unary();return e;}return call();}
     template<class Next> std::unique_ptr<Expr> bin(Next next,std::initializer_list<TK> ks){auto e=(this->*next)();for(;;){bool m=false;for(auto k:ks)if(at(k)){m=true;break;}if(!m)break;std::string op=cur().text;++i;auto n=std::make_unique<Expr>();n->k=Expr::Binary;n->text=op;n->a=std::move(e);n->b=(this->*next)();e=std::move(n);}return e;}
     std::unique_ptr<Expr> factor(){return bin(&Parser::unary,{TK::Star,TK::Slash,TK::Percent});}

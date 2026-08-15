@@ -1,0 +1,7 @@
+func string_empty(s) { return len(s) == 0; }
+func string_trim(s) { return trim(s); }
+func string_upper(s) { return upper(s); }
+func string_lower(s) { return lower(s); }
+func string_find(s, needle) { return find(s, needle); }
+func string_slice(s, pos, count) { return substr(s, pos, count); }
+func string_replace(s, from, to) { return replace(s, from, to); }

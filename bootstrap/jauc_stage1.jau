@@ -1,11 +1,60 @@
-// Jau-side bootstrap seed. This is intentionally small enough to keep the
-// bootstrap dependency surface auditable. Stage-0 (C++) runs this today;
-// future stages replace helper builtins until compiler parity is reached.
-func emit_header(out) {
-    write_file(out, ".intel_syntax noprefix\n.text\n.globl main\nmain:\n  xor eax,eax\n  ret\n");
+// Stage-1 bootstrap compiler, implemented in Jau.
+// It compiles an auditable subset (literal print + return) to freestanding
+// Linux Intel assembly which Jau's own jauas can turn into ELF without GCC/ld/as.
+let stage_data = "";
+let stage_label = 0;
+let stage_target = "linux-x86_64";
+
+func emit_prelude() {
+    return ".intel_syntax noprefix\n.text\n.globl _start\n_start:\n";
+}
+func emit_print(value) {
+    let label = "msg" + str(stage_label);
+    let text = str(value) + "\\n";
+    stage_data = stage_data + label + ": .ascii \"" + text + "\"\n";
+    stage_label = stage_label + 1;
+    if (stage_target == "linux-x86") {
+        return "  mov eax, 4\n  mov ebx, 1\n  mov ecx, " + label + "\n  mov edx, " + str(len(str(value)) + 1) + "\n  int 0x80\n";
+    }
+    return "  mov rax, 1\n  mov rdi, 1\n  lea rsi, [rip+" + label + "]\n  mov rdx, " + str(len(str(value)) + 1) + "\n  syscall\n";
+}
+func compile_prints(src) {
+    let out = "";
+    let rest = src;
+    while (true) {
+        let p = find(rest, "print(");
+        if (p < 0) { break; }
+        rest = substr(rest, p + 6, len(rest) - p - 6);
+        let e = find(rest, ")");
+        if (e < 0) { break; }
+        let value = int(trim(substr(rest, 0, e)));
+        out = out + emit_print(value);
+        rest = substr(rest, e + 1, len(rest) - e - 1);
+    }
+    return out;
+}
+func compile_return(src) {
+    let p = find(src, "return ");
+    let value = 0;
+    if (p >= 0) {
+        let rest = substr(src, p + 7, len(src) - p - 7);
+        let e = find(rest, ";");
+        if (e < 0) { e = len(rest); }
+        value = int(trim(substr(rest, 0, e)));
+    }
+    if (stage_target == "linux-x86") { return "  mov eax, 1\n  mov ebx, " + str(value) + "\n  int 0x80\n"; }
+    return "  mov rax, 60\n  mov rdi, " + str(value) + "\n  syscall\n";
+}
+func compile_file_stage1(input, output, target) {
+    stage_data = ""; stage_label = 0; stage_target = target;
+    let src = read_file(input);
+    let asm = emit_prelude() + compile_prints(src) + compile_return(src) + ".section .rodata\n" + stage_data;
+    write_file(output, asm);
+    print("stage1 compiled " + input + " -> " + output + " [" + target + "]");
     return 0;
 }
-func bootstrap(out) {
-    print("Jau stage1 bootstrap seed -> " + out);
-    return emit_header(out);
+if (argc() >= 2) {
+    let target = "linux-x86_64";
+    if (argc() >= 3) { target = arg(2); }
+    compile_file_stage1(arg(0), arg(1), target);
 }

@@ -14,9 +14,20 @@ jobs:
       - run: cmake --build build -j2
       - run: ctest --test-dir build --output-on-failure
       - run: ./build/jauc build examples/fibonacci.jau -o fibonacci.jbc && ./build/jur fibonacci.jbc
-      - run: ./build/jauc asm examples/native.jau -o native-linux-x64.s --target linux-x86_64
+      - run: ./build/jauc asm tests/aot_functions.jau -o native-linux-x64.s --target linux-x86_64 && cc -no-pie native-linux-x64.s -o aot-test && printf '720\n1\n3\n4\n' > expected.txt && ./aot-test > actual.txt && diff -u expected.txt actual.txt
+      - run: ./build/jauc standalone examples/fibonacci.jau -o jau-example --runtime ./build/jur && test "$(./jau-example)" = "55"
+      - run: ./build/jauc run bootstrap/jauc_stage1.jau -- bootstrap/stage2_input.jau zero32.s linux-x86 && ./build/jauas zero32.s -o zero32 --target linux-x86 && file zero32 | grep -q "ELF 32-bit"
+      - run: rm -rf install-test && ./build/jau-setup --prefix "$PWD/install-test" --source-root "$PWD" --no-path && JAU_HOME="$PWD/install-test" ./install-test/bin/jaupm where demo
+      - name: Stage artifact
+        run: |
+          mkdir -p dist/stdlib dist/tools dist/bootstrap
+          cp build/jauc build/jur build/jauas build/jau-setup dist/
+          cp -r stdlib/* dist/stdlib/
+          cp tools/jaupm.jau dist/tools/
+          cp bootstrap/jauc_stage1.jau dist/bootstrap/
+          cp native-linux-x64.s dist/
       - uses: actions/upload-artifact@v4
-        with: {name: jau-linux-x64, path: "build/jauc\nbuild/jur\nnative-linux-x64.s"}
+        with: {name: jau-linux-x64, path: dist}
 
   linux-x86:
     runs-on: ubuntu-latest
@@ -25,9 +36,19 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y g++-multilib
       - run: cmake -S . -B build32 -DCMAKE_CXX_FLAGS=-m32 -DCMAKE_ASM_FLAGS=-m32 -DCMAKE_EXE_LINKER_FLAGS=-m32 -DJAU_ENABLE_ASM_FASTOPS=OFF
       - run: cmake --build build32 -j2
+      - run: ./build32/jauc run examples/fibonacci.jau
       - run: ./build32/jauc asm examples/native.jau -o native-linux-x86.s --target linux-x86
+      - run: ./build32/jauc standalone examples/fibonacci.jau -o jau-example32 --runtime ./build32/jur && test "$(./jau-example32)" = "55"
+      - name: Stage artifact
+        run: |
+          mkdir -p dist32/stdlib dist32/tools dist32/bootstrap
+          cp build32/jauc build32/jur build32/jauas build32/jau-setup dist32/
+          cp -r stdlib/* dist32/stdlib/
+          cp tools/jaupm.jau dist32/tools/
+          cp bootstrap/jauc_stage1.jau dist32/bootstrap/
+          cp native-linux-x86.s dist32/
       - uses: actions/upload-artifact@v4
-        with: {name: jau-linux-x86, path: "build32/jauc\nbuild32/jur\nnative-linux-x86.s"}
+        with: {name: jau-linux-x86, path: dist32}
 
   windows-x64:
     runs-on: windows-latest
@@ -35,10 +56,31 @@ jobs:
       - uses: actions/checkout@v4
       - run: cmake -S . -B build -A x64 -DJAU_ENABLE_ASM_FASTOPS=OFF
       - run: cmake --build build --config Release --parallel 2
-      - run: .\\build\\Release\\jauc.exe run examples\\hello.jau
-      - run: .\\build\\Release\\jauc.exe asm examples\\native.jau -o native-windows-x64.s --target windows-x86_64
+      - run: .\build\Release\jauc.exe run examples\hello.jau
+      - run: .\build\Release\jauc.exe asm tests\aot_functions.jau -o native-windows-x64.s --target windows-x86_64
+      - shell: pwsh
+        run: |
+          .\build\Release\jauc.exe standalone examples\fibonacci.jau -o jau-example.exe --runtime .\build\Release\jur.exe
+          $out = & .\jau-example.exe
+          if ($out -ne "55") { throw "standalone output mismatch: $out" }
+      - name: Setup smoke test
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force install-test -ErrorAction SilentlyContinue
+          .\build\Release\jau-setup.exe --prefix "$PWD\install-test" --source-root "$PWD" --no-path
+          $env:JAU_HOME="$PWD\install-test"
+          & .\install-test\bin\jaupm.cmd where demo
+      - name: Stage artifact
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist\stdlib,dist\tools,dist\bootstrap | Out-Null
+          Copy-Item build\Release\jauc.exe,build\Release\jur.exe,build\Release\jauas.exe,build\Release\jau-setup.exe dist\
+          Copy-Item stdlib\* dist\stdlib\
+          Copy-Item tools\jaupm.jau dist\tools\
+          Copy-Item bootstrap\jauc_stage1.jau dist\bootstrap\
+          Copy-Item native-windows-x64.s dist\
       - uses: actions/upload-artifact@v4
-        with: {name: jau-windows-x64, path: "build/Release/jauc.exe\nbuild/Release/jur.exe\nnative-windows-x64.s"}
+        with: {name: jau-windows-x64, path: dist}
 
   windows-x86:
     runs-on: windows-latest
@@ -46,6 +88,21 @@ jobs:
       - uses: actions/checkout@v4
       - run: cmake -S . -B build32 -A Win32 -DJAU_ENABLE_ASM_FASTOPS=OFF
       - run: cmake --build build32 --config Release --parallel 2
-      - run: .\\build32\\Release\\jauc.exe asm examples\\native.jau -o native-windows-x86.s --target windows-x86
+      - run: .\build32\Release\jauc.exe run examples\fibonacci.jau
+      - run: .\build32\Release\jauc.exe asm examples\native.jau -o native-windows-x86.s --target windows-x86
+      - shell: pwsh
+        run: |
+          .\build32\Release\jauc.exe standalone examples\fibonacci.jau -o jau-example32.exe --runtime .\build32\Release\jur.exe
+          $out = & .\jau-example32.exe
+          if ($out -ne "55") { throw "standalone output mismatch: $out" }
+      - name: Stage artifact
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist32\stdlib,dist32\tools,dist32\bootstrap | Out-Null
+          Copy-Item build32\Release\jauc.exe,build32\Release\jur.exe,build32\Release\jauas.exe,build32\Release\jau-setup.exe dist32\
+          Copy-Item stdlib\* dist32\stdlib\
+          Copy-Item tools\jaupm.jau dist32\tools\
+          Copy-Item bootstrap\jauc_stage1.jau dist32\bootstrap\
+          Copy-Item native-windows-x86.s dist32\
       - uses: actions/upload-artifact@v4
-        with: {name: jau-windows-x86, path: "build32/Release/jauc.exe\nbuild32/Release/jur.exe\nnative-windows-x86.s"}
+        with: {name: jau-windows-x86, path: dist32}

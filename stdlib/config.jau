@@ -1,0 +1,2 @@
+func config_get(text, key) { return manifest_value(text, key); }
+func config_file(path, key) { return manifest_value(read_file(path), key); }

@@ -1,0 +1,11 @@
+import "strings.jau"
+import "fs.jau"
+let root = path_join(cwd(), "jau_runtime_api_tmp");
+mkdir(root);
+let f = path_join(root, "x.txt");
+write_file(f, "  Hello Jau  ");
+print(string_upper(string_trim(read_file(f))));
+print(substr("abcdef", 2, 3));
+print(find("abcdef", "cd"));
+print(hash64("Jau") != 0);
+remove_file(f);

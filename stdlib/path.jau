@@ -1,0 +1,3 @@
+func path(a, b) { return path_join(a, b); }
+func current_dir() { return cwd(); }
+func temporary_path(name) { return path_join(temp_dir(), name); }

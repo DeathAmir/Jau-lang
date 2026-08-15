@@ -1,0 +1,10 @@
+func fs_read(path) { return read_file(path); }
+func fs_write(path, content) { return write_file(path, content); }
+func fs_exists(path) { return file_exists(path); }
+func fs_mkdir(path) { return mkdir(path); }
+func fs_remove(path) { return remove_file(path); }
+func fs_join(a, b) { return path_join(a, b); }
+func fs_cwd() { return cwd(); }
+
+func fs_list(path) { return list_dir(path); }
+func fs_size(path) { return file_size(path); }

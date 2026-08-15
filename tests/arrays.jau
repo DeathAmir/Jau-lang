@@ -1,0 +1,9 @@
+import "arrays.jau"
+let a = [1, 2, 3];
+print(a[0] + a[2]);
+push(a, 9);
+print(len(a));
+print(pop(a));
+let words = split("jau,is,fast", ",");
+print(words[1]);
+print(join(words, "-"));

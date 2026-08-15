@@ -1,8 +1,7 @@
-# Jau bootstrap
+# Bootstrap
 
-Jau currently uses a conventional two-stage bootstrap:
+`jauc_stage1.jau` is a compiler stage implemented in Jau itself. It reads a Jau source file, parses the bootstrap literal `print(...)` / `return` subset, and emits freestanding Intel assembly for Linux x86 or x86-64.
 
-1. **stage0**: the production compiler/VM in C++17 (`jauc`/`jur`).
-2. **stage1 seed**: `jauc_stage1.jau`, executed by stage0 and able to emit target text files using Jau runtime primitives.
+`jauas` assembles that output directly to ELF32/ELF64 without GCC, `as`, `ld` or NASM. The CI bootstrap test executes the x86-64 Stage-2 result.
 
-This repository does **not** claim compiler-parity self-hosting yet. Real self-hosting is considered complete only when a Jau-written compiler accepts the same language, recompiles itself, and the stage2/stage3 outputs are reproducible. The CI contains the bootstrap seed check so that the path toward that goal stays executable rather than being roadmap-only.
+This is a staged self-host foundation rather than full compiler parity. See `docs/BOOTSTRAP.md` for the exact status and next parity milestones.

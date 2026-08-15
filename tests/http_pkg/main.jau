@@ -1,0 +1,1 @@
+func remote_value() { return 314; }

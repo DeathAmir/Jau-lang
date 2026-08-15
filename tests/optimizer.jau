@@ -1,0 +1,5 @@
+let x = (2 + 3) * 1 + 0;
+if (true) { print(x); } else { print(999); }
+while (false) { print(888); }
+func f() { return 7; print(777); }
+print(f());

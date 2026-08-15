@@ -1,0 +1,5 @@
+func random(max) { return random_int(max); }
+func random_between(minimum, maximum) {
+    if (maximum <= minimum) { return minimum; }
+    return minimum + random_int(maximum - minimum);
+}

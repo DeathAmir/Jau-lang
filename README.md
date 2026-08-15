@@ -1,32 +1,76 @@
 # Jau Programming Language
 
-Jau is an experimental systems-oriented language implementation written from scratch in C++17. The repository contains a real lexer/parser/compiler, portable JBC bytecode format, the JUR virtual machine, an optimizer, module imports, a standard-library seed, architecture-specific assembly fast paths, and an AOT assembly backend.
+Jau is an experimental programming language and toolchain implemented from scratch in C++17, with a growing self-hosted layer written in Jau itself. Version **0.3.0** includes a bytecode compiler, JUR VM, x86/x86-64 AOT assembly backend, a dependency-free Linux ELF assembler (`jauas`), a Jau-written package manager (`jaupm`), a cross-platform setup program, a standard library, and a tested bootstrap compiler stage written in Jau.
 
-## Current language
+## Language
 
 ```jau
-import "math.jau"
+import "arrays.jau"
 
 func fib(n) {
     if (n <= 1) { return n; }
     return fib(n - 1) + fib(n - 2);
 }
 
-let answer = square(fib(10));
-print(answer);
+const name = "Jau";
+let values = [fib(8), 21, 34];
+push(values, 55);
+
+let i = 0;
+while (i < len(values)) {
+    if (i == 1) { i = i + 1; continue; }
+    print(values[i]);
+    i = i + 1;
+}
 ```
 
-Supported today: dynamic `int`, `float`, `bool`, `string`, `null`; `let`/`const` declarations; assignment; arithmetic/comparison/boolean operators; functions and recursion; local/global variables; `if/else`; `while`; `return`; comments; local/import-path modules; builtins including `print`, `clock`, `len`, `str`, `int`, `read_file`, `write_file`, `contains`, and `starts_with`.
+Implemented today: integers, floats, booleans, strings, null, shared arrays, indexing, mutable `let`, enforced `const`, functions, recursion, globals/locals, imports, `if/else`, `while`, `break`, `continue`, `return`, arithmetic/comparison/boolean operators and builtins.
 
 ## Toolchain
 
-- `jauc build main.jau -o main.jbc` — compile source to portable JBC bytecode.
-- `jur main.jbc` — execute JBC in the JUR stack VM.
-- `jauc run main.jau` — compile and run directly.
-- `jauc asm main.jau -o main.s --target linux-x86_64` — emit real GNU-style assembly.
-- `jauc native main.jau -o main --target linux-x86_64` — assemble/link using the matching system GCC/MinGW toolchain.
+- `jauc build app.jau -o app.jbc` — compile to JBC bytecode.
+- `jur app.jbc` — run bytecode in JUR.
+- `jauc run app.jau -- arg1 arg2` — compile/run source with program arguments.
+- `jauc asm app.jau -o app.s --target linux-x86_64` — emit Intel/GNU assembly.
+- `jauc native app.jau -o app --target ...` — AOT assemble/link through the platform toolchain.
+- `jauc standalone app.jau -o app` — produce a single executable bundle without GCC/NASM/MinGW at application build time.
+- `jauas input.s -o app --target linux-x86_64` — Jau's own dependency-free assembler/linker for the freestanding bootstrap subset; emits ELF32/ELF64 directly.
+- `jaupm ...` — package manager whose command logic is written in Jau.
+- `jau-setup` — installs the toolchain, stdlib and JauPM and configures `JAU_HOME`/`PATH`.
 
-AOT targets: `linux-x86_64`, `linux-x86`, `windows-x86_64`, `windows-x86`. The portable VM supports the full language implemented above. The current AOT backend deliberately supports the integer/bool core, variables, assignment, arithmetic/comparisons, `if`, `while`, and `print`; unsupported constructs fail loudly instead of silently generating wrong code.
+AOT assembly targets: `linux-x86_64`, `linux-x86`, `windows-x86_64`, `windows-x86`. The internal dependency-free `jauas` path currently targets Linux x86/x86-64. Windows gets a zero-toolchain **standalone bundle** path while the Windows AOT assembly path still uses a system linker.
+
+## Optimizer
+
+The front end performs constant folding, unary folding, algebraic simplification (`x+0`, `x*1`, zero multiplication), fixed-branch elimination, false-loop removal and unreachable-statement removal. `const` assignment is rejected during compilation. AOT now supports integer/bool functions, recursion, calls, return values, loops, break/continue and comparisons instead of only top-level expressions.
+
+## Packages
+
+JauPM is in `tools/jaupm.jau` and is executed by Jau itself:
+
+```bash
+jaupm init mylib
+jaupm install demo https://example.org/demo/main.jau
+jaupm list
+```
+
+Installed packages live at `$JAU_HOME/packages/<name>/main.jau` and are imported with:
+
+```jau
+import "pkg:demo"
+```
+
+`JAU_REGISTRY` can point to a registry base URL so `jaupm install NAME` can resolve `$JAU_REGISTRY/NAME/main.jau`. JauPM also supports remote package manifests with `install-manifest`.
+
+## Internet and standard library
+
+Runtime networking includes a direct socket HTTP client on POSIX, redirects/chunked transfer decoding, downloads, and HTTPS platform fallback. TLS is intentionally not reimplemented with home-grown cryptography. The installed stdlib currently contains modules for arrays, config, environment, filesystem, HTTP, IO, math, networking, package paths, filesystem paths, randomness, strings, system information and testing.
+
+## Bootstrap / self-hosting
+
+`bootstrap/jauc_stage1.jau` is now an actual compiler stage written in Jau. It reads Jau source, parses an auditable bootstrap subset, emits freestanding Intel assembly, then `jauas` turns that assembly directly into an ELF executable without GCC, `as`, `ld` or NASM. CI executes the resulting stage-2 program.
+
+This is **real staged self-hosting work, but not yet full compiler parity**: the complete lexer/parser/optimizer/backend are still Stage-0 C++. Full self-hosting means porting those components to Jau and proving Stage-2/Stage-3 compiler equivalence. See `docs/BOOTSTRAP.md`.
 
 ## Build
 
@@ -36,34 +80,4 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-Windows:
-
-```powershell
-cmake -S . -B build -A x64
-cmake --build build --config Release
-```
-
-GitHub Actions builds and uploads artifacts for Linux x86_64, Linux x86, Windows x86_64, and Windows x86.
-
-## Modules / libraries
-
-Put reusable functions in `.jau` files and import them:
-
-```jau
-import "math.jau"
-print(square(12));
-```
-
-Resolution checks the importing file directory, every `-I <path>`, `$JAU_HOME/stdlib`, then `./stdlib`. Circular/repeated imports are deduplicated.
-
-## VM and optimization
-
-JBC is a versioned binary bytecode (`JBC1`) containing constants, global symbol metadata, functions, local-slot counts and fixed-width instructions. JUR uses call frames and indexed local/global slots rather than name lookups on every instruction. `-O1/-O2` performs compile-time constant folding. On GNU-compatible x86_64 builds, hot integer add/sub/mul paths are implemented in hand-written assembly with a portable C++ fallback.
-
-## Self-hosting status
-
-The bootstrap directory is executable scaffolding, not a fake self-hosting badge. Stage0 is the C++ compiler. `bootstrap/jauc_stage1.jau` is a Jau-written bootstrap seed exercised by the VM. **Compiler-parity self-hosting is not yet complete**; it will only be marked complete when a Jau-written compiler can compile the full compiler source and stage2/stage3 output reproduces cleanly. See `bootstrap/README.md`.
-
-## License
-
-See `LICENSE`.
+GitHub Actions builds Linux x86-64, Linux x86, Windows x86-64 and Windows x86 artifacts.
