@@ -1,286 +1,69 @@
-<div align="center">
+# Jau Programming Language
 
-<img src="https://capsule-render.vercel.app/api?type=waving&height=300&color=0f172a&text=Jau%20Language&fontColor=ffffff&fontSize=60&animation=fadeIn" width="100%"/>
+Jau is an experimental systems-oriented language implementation written from scratch in C++17. The repository contains a real lexer/parser/compiler, portable JBC bytecode format, the JUR virtual machine, an optimizer, module imports, a standard-library seed, architecture-specific assembly fast paths, and an AOT assembly backend.
 
-<h1>⚡ Jau Programming Language</h1>
+## Current language
 
-<h3>You break it. <b>Jau</b> fixes it.</h3>
+```jau
+import "math.jau"
 
-<br>
-
-<img src="https://img.shields.io/github/stars/DeathAmir/Jau-lang?style=for-the-badge&color=yellow">
-<img src="https://img.shields.io/github/forks/DeathAmir/Jau-lang?style=for-the-badge&color=orange">
-<img src="https://img.shields.io/github/issues/DeathAmir/Jau-lang?style=for-the-badge&color=red">
-<img src="https://img.shields.io/github/license/DeathAmir/Jau-lang?style=for-the-badge&color=purple">
-
-<br>
-
-<img src="https://img.shields.io/badge/version-0.1.0-blue?style=for-the-badge&logo=semver">
-<img src="https://img.shields.io/badge/runtime-JUR-orange?style=for-the-badge">
-<img src="https://img.shields.io/badge/platform-cross--platform-green?style=for-the-badge">
-<img src="https://img.shields.io/badge/status-experimental-red?style=for-the-badge">
-
-<br><br>
-
-<a href="#english">🇬🇧 English</a> • <a href="#persian">🇮🇷 فارسی</a>
-
-<br><br>
-
-<img src="https://skillicons.dev/icons?i=cpp,go,python,rust,linux,vscode,git" height="45">
-
-</div>
-
----
-
-<div align="center">
-
-# ⚙️ Jau Identity
-
-</div>
-
-<div align="center">
-
-```
-      ██╗ █████╗ ██╗   ██╗
-      ██║██╔══██╗██║   ██║
-      ██║███████║██║   ██║
- ██   ██║██╔══██║██║   ██║
- ╚█████╔╝██║  ██║╚██████╔╝
-  ╚════╝ ╚═╝  ╚═╝ ╚═════╝
-```
-
-</div>
-
----
-
-# English
-
-## 🚀 What is Jau
-
-Jau is a modern experimental programming language focused on **speed**, **simplicity**, and **hardware‑level performance** without the painful complexity of traditional low‑level languages.
-
-Designed for developers who want **power without suffering**.
-
----
-
-## ⚡ Key Features
-
-- 🚀 Ultra Fast Compilation  
-- 🧠 Simple Clean Syntax  
-- 🔒 Safe Runtime (JUR)  
-- 📦 Modular Package System  
-- 🌍 Cross Platform Execution  
-- ⚙️ Hardware‑Near Performance  
-- 🔌 Extensible Architecture  
-
----
-
-## 🧠 Architecture
-
-```mermaid
-graph TD
-A[Jau Source .jau] --> B[Jau Compiler]
-B --> C[Jau Bytecode .jbc]
-C --> D[JUR Runtime]
-D --> E[Operating System]
-```
-
----
-
-## 🧪 Example Code
-
-### Variables
-
-```rust
-^Variables^
-
-name = "DeathAmir"
-age = 20
-
-print(name)
-print(age)
-```
-
-### Functions
-
-```rust
-^Function^
-
-func greet(name) {
-    if name == "Jau" {
-        print("Hello Master")
-    } else {
-        print("Hello " + name)
-    }
+func fib(n) {
+    if (n <= 1) { return n; }
+    return fib(n - 1) + fib(n - 2);
 }
 
-greet("Jau")
+let answer = square(fib(10));
+print(answer);
 ```
 
----
+Supported today: dynamic `int`, `float`, `bool`, `string`, `null`; `let`/`const` declarations; assignment; arithmetic/comparison/boolean operators; functions and recursion; local/global variables; `if/else`; `while`; `return`; comments; local/import-path modules; builtins including `print`, `clock`, `len`, `str`, `int`, `read_file`, `write_file`, `contains`, and `starts_with`.
 
-## 🛠 Toolchain
+## Toolchain
 
-| Tool | Description |
-|-----|-------------|
-| jauc | Jau Compiler |
-| jur | Jau Runtime |
-| jaupm | Package Manager |
-| jaufmt | Code Formatter |
+- `jauc build main.jau -o main.jbc` — compile source to portable JBC bytecode.
+- `jur main.jbc` — execute JBC in the JUR stack VM.
+- `jauc run main.jau` — compile and run directly.
+- `jauc asm main.jau -o main.s --target linux-x86_64` — emit real GNU-style assembly.
+- `jauc native main.jau -o main --target linux-x86_64` — assemble/link using the matching system GCC/MinGW toolchain.
 
----
+AOT targets: `linux-x86_64`, `linux-x86`, `windows-x86_64`, `windows-x86`. The portable VM supports the full language implemented above. The current AOT backend deliberately supports the integer/bool core, variables, assignment, arithmetic/comparisons, `if`, `while`, and `print`; unsupported constructs fail loudly instead of silently generating wrong code.
 
-## 📊 Performance Vision
-
-| Language | Simplicity | Speed |
-|--------|--------|--------|
-| Jau | ⭐⭐⭐⭐⭐ | 🚀 |
-| Python | ⭐⭐⭐⭐⭐ | 🐢 |
-| Go | ⭐⭐⭐ | 🚀 |
-| C++ | ⭐ | 🔥 |
-
----
-
-## 📦 Installation
+## Build
 
 ```bash
-git clone https://github.com/DeathAmir/Jau
-
-cd Jau
-
-make build
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+ctest --test-dir build --output-on-failure
 ```
 
----
+Windows:
 
-## ▶ Run
-
-```bash
-jauc main.jau
-jur main.jbc
+```powershell
+cmake -S . -B build -A x64
+cmake --build build --config Release
 ```
 
----
+GitHub Actions builds and uploads artifacts for Linux x86_64, Linux x86, Windows x86_64, and Windows x86.
 
-## 📅 Roadmap
+## Modules / libraries
 
-- ✅ Core Compiler
-- ✅ JUR Runtime
-- ⏳ Cloud Package Manager
-- ⏳ WebAssembly Target
-- ⏳ VSCode Extension
-- ⏳ Jau Standard Library
-- ⏳ Jau Debugger
+Put reusable functions in `.jau` files and import them:
 
----
-
-## 🌐 Ecosystem
-
-- JUR Runtime
-- JauPM Package Manager
-- Jau Standard Library
-- Jau Formatter
-- Jau Language Server
-
----
-
-## 🤝 Contributing
-
-Pull requests are welcome.
-
-If you want to build the future of programming with **Jau**, join the project.
-
----
-
-# Persian
-
-<div dir="rtl">
-
-## 🚀 زبان برنامه‌نویسی Jau
-
-جاو یک زبان برنامه‌نویسی مدرن و آزمایشی است که برای **سرعت بالا، سادگی و قدرت نزدیک به سخت‌افزار** طراحی شده.
-
-هدفش اینه که قدرت زبان‌های سطح پایین رو بدون دردسرهای معمول در اختیار برنامه‌نویس قرار بده.
-
----
-
-## ⚡ ویژگی‌ها
-
-- سرعت کامپایل بسیار بالا  
-- سینتکس ساده و تمیز  
-- ران‌تایم امن JUR  
-- سیستم پکیج ماژولار  
-- اجرا روی چند پلتفرم  
-- عملکرد نزدیک به سخت‌افزار  
-
----
-
-## معماری
-
-```mermaid
-graph TD
-A[کد Jau] --> B[کامپایلر Jau]
-B --> C[بایت‌کد JBC]
-C --> D[رانتایم JUR]
-D --> E[سیستم عامل]
+```jau
+import "math.jau"
+print(square(12));
 ```
 
----
+Resolution checks the importing file directory, every `-I <path>`, `$JAU_HOME/stdlib`, then `./stdlib`. Circular/repeated imports are deduplicated.
 
-## نمونه کد
+## VM and optimization
 
-```rust
-name = "DeathAmir"
+JBC is a versioned binary bytecode (`JBC1`) containing constants, global symbol metadata, functions, local-slot counts and fixed-width instructions. JUR uses call frames and indexed local/global slots rather than name lookups on every instruction. `-O1/-O2` performs compile-time constant folding. On GNU-compatible x86_64 builds, hot integer add/sub/mul paths are implemented in hand-written assembly with a portable C++ fallback.
 
-print(name)
-```
+## Self-hosting status
 
----
+The bootstrap directory is executable scaffolding, not a fake self-hosting badge. Stage0 is the C++ compiler. `bootstrap/jauc_stage1.jau` is a Jau-written bootstrap seed exercised by the VM. **Compiler-parity self-hosting is not yet complete**; it will only be marked complete when a Jau-written compiler can compile the full compiler source and stage2/stage3 output reproduces cleanly. See `bootstrap/README.md`.
 
-## ابزارها
+## License
 
-| ابزار | توضیح |
-|------|------|
-| jauc | کامپایلر |
-| jur | ران‌تایم |
-| jaupm | پکیج منیجر |
-| jaufmt | فرمت‌کننده کد |
-
----
-
-## نقشه راه
-
-- هسته کامپایلر
-- ران‌تایم JUR
-- پکیج منیجر ابری
-- پشتیبانی WebAssembly
-- افزونه VSCode
-
----
-
-## مشارکت
-
-اگر دوست داری در توسعه این زبان شرکت کنی  
-می‌تونی Pull Request بفرستی.
-
----
-
-### سازنده
-
-DeathAmir
-
-</div>
-
----
-
-<div align="center">
-
-## ⭐ Support The Project
-
-<img src="https://img.shields.io/github/stars/DeathAmir/Jau-lang?style=social">
-
-<br><br>
-
-<img src="https://capsule-render.vercel.app/api?type=waving&height=120&color=0f172a&section=footer"/>
-
-</div>
+See `LICENSE`.

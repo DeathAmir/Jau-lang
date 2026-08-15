@@ -1,0 +1,3 @@
+import "math.jau"
+print(square(12));
+print(max(4, 9));

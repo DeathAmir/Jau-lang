@@ -1,0 +1,3 @@
+import "../bootstrap/jauc_stage1.jau"
+bootstrap("stage1_seed.s");
+print(contains(read_file("stage1_seed.s"), "main:"));

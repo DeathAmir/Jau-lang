@@ -1,0 +1,11 @@
+// Jau-side bootstrap seed. This is intentionally small enough to keep the
+// bootstrap dependency surface auditable. Stage-0 (C++) runs this today;
+// future stages replace helper builtins until compiler parity is reached.
+func emit_header(out) {
+    write_file(out, ".intel_syntax noprefix\n.text\n.globl main\nmain:\n  xor eax,eax\n  ret\n");
+    return 0;
+}
+func bootstrap(out) {
+    print("Jau stage1 bootstrap seed -> " + out);
+    return emit_header(out);
+}

@@ -1,0 +1,51 @@
+name: build
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  linux-x64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build build -j2
+      - run: ctest --test-dir build --output-on-failure
+      - run: ./build/jauc build examples/fibonacci.jau -o fibonacci.jbc && ./build/jur fibonacci.jbc
+      - run: ./build/jauc asm examples/native.jau -o native-linux-x64.s --target linux-x86_64
+      - uses: actions/upload-artifact@v4
+        with: {name: jau-linux-x64, path: "build/jauc\nbuild/jur\nnative-linux-x64.s"}
+
+  linux-x86:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y g++-multilib
+      - run: cmake -S . -B build32 -DCMAKE_CXX_FLAGS=-m32 -DCMAKE_ASM_FLAGS=-m32 -DCMAKE_EXE_LINKER_FLAGS=-m32 -DJAU_ENABLE_ASM_FASTOPS=OFF
+      - run: cmake --build build32 -j2
+      - run: ./build32/jauc asm examples/native.jau -o native-linux-x86.s --target linux-x86
+      - uses: actions/upload-artifact@v4
+        with: {name: jau-linux-x86, path: "build32/jauc\nbuild32/jur\nnative-linux-x86.s"}
+
+  windows-x64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S . -B build -A x64 -DJAU_ENABLE_ASM_FASTOPS=OFF
+      - run: cmake --build build --config Release --parallel 2
+      - run: .\\build\\Release\\jauc.exe run examples\\hello.jau
+      - run: .\\build\\Release\\jauc.exe asm examples\\native.jau -o native-windows-x64.s --target windows-x86_64
+      - uses: actions/upload-artifact@v4
+        with: {name: jau-windows-x64, path: "build/Release/jauc.exe\nbuild/Release/jur.exe\nnative-windows-x64.s"}
+
+  windows-x86:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S . -B build32 -A Win32 -DJAU_ENABLE_ASM_FASTOPS=OFF
+      - run: cmake --build build32 --config Release --parallel 2
+      - run: .\\build32\\Release\\jauc.exe asm examples\\native.jau -o native-windows-x86.s --target windows-x86
+      - uses: actions/upload-artifact@v4
+        with: {name: jau-windows-x86, path: "build32/Release/jauc.exe\nbuild32/Release/jur.exe\nnative-windows-x86.s"}

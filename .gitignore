@@ -1,0 +1,7 @@
+build/
+build32/
+*.jbc
+*.o
+*.obj
+*.exe
+stage1_seed.s
