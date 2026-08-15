@@ -73,6 +73,18 @@ static std::vector<std::string> split_csv(const std::string& s){std::vector<std:
 static std::string native_key(std::string target){for(char&c:target)if(c=='-')c='_';return "native_"+target;}
 static std::string read_text(const fs::path&p){std::ifstream f(p,std::ios::binary);if(!f)return "";std::ostringstream s;s<<f.rdbuf();return s.str();}
 static void write_binary(const fs::path&p,const std::string&data){if(p.has_parent_path())fs::create_directories(p.parent_path());std::ofstream f(p,std::ios::binary|std::ios::trunc);if(!f)throw std::runtime_error("cannot create temporary native object");f.write(data.data(),(std::streamsize)data.size());}
+static void write_link_metadata(const fs::path& object,const std::string& target,const std::string& entry,int optimize,const std::string& kind){
+    fs::path p=object.string()+".jmeta";std::ofstream f(p,std::ios::trunc);if(!f)throw std::runtime_error("cannot write linker metadata: "+p.string());
+    f<<"JAUMETA1\n";
+    f<<"producer=\"jauc\"\n";
+    f<<"version=\""<<jau::version()<<"\"\n";
+    f<<"target=\""<<target<<"\"\n";
+    f<<"abi=\"jau-c-v1\"\n";
+    f<<"kind=\""<<kind<<"\"\n";
+    f<<"subsystem=\"console\"\n";
+    f<<"entry=\""<<entry<<"\"\n";
+    f<<"optimize="<<optimize<<"\n";
+}
 
 struct NativeCollector {
     std::string target;
@@ -122,7 +134,7 @@ static jau::Result windows_native_build(const char* argv0,const std::string&inpu
         if(run_process(assembler,{asmp.string(),"-o",obj.string(),"--target",target,"--object"})!=0){fs::remove_all(tmp,ec);return {false,"internal jauas object build failed"};}
         std::vector<std::string> objs{obj.string()};auto pkg=collect_native_package_objects(input,target,tmp,opt);objs.insert(objs.end(),pkg.begin(),pkg.end());int serial=0;
         for(auto&x:opt.native_inputs){auto e=lower_ext(x);if(e==".obj"||e==".o")objs.push_back(x);else if(e==".c"||is_cpp_ext(e)){fs::path p=tmp/("link_"+std::to_string(serial++)+".obj");if(!compile_native_input(x,target,p)){fs::remove_all(tmp,ec);return {false,"failed to compile native C/C++ input: "+x+" (set JAU_CC/JAU_CXX if needed)"};}objs.push_back(p.string());}else{fs::remove_all(tmp,ec);return {false,"unsupported Windows native input: "+x+" (use .c/.cpp/.obj)"};}}
-        if(fs::path(output).extension()!=".exe")output+=".exe";std::vector<std::string> args=objs;args.push_back("-o");args.push_back(output);args.push_back("--target");args.push_back(target);int rc=run_process(linker,args);fs::remove_all(tmp,ec);if(rc!=0)return {false,"internal jauld PE link failed"};return {true,"native executable built without external linker: "+output};
+        if(fs::path(output).extension()!=".exe")output+=".exe";std::vector<std::string> args=objs;args.push_back("-o");args.push_back(output);args.push_back("--target");args.push_back(target);args.push_back("--entry");args.push_back("main");int rc=run_process(linker,args);fs::remove_all(tmp,ec);if(rc!=0)return {false,"internal jauld PE link failed"};return {true,"native executable built without external linker: "+output};
     }catch(const std::exception&e){return {false,e.what()};}
 }
 
@@ -132,10 +144,11 @@ static void help() {
               << "  jauc run <file.jau>\n"
               << "  jauc asm <file.jau> -o out.s --target <linux-x86_64|linux-x86|windows-x86_64|windows-x86> [--library]\n"
               << "  jauc obj <file.jau> -o out.o|out.obj --target <target>\n"
-              << "  jauc native <file.jau> -o program --target <target> [--link file.c|file.cpp|file.obj]\n"
+              << "  jauc native <file.jau> -o program --target <target> [--link file.c|file.cpp|file.obj] [-O0..-O3]\n"
               << "  jauc standalone <file.jau> -o program [--runtime path/to/jur]\n"
               << "  jauc --version\n\n"
-              << "Windows native uses Jau's internal jauas + jauld PE32/PE32+ linker.\n"
+              << "Windows native uses Jau's internal jauas + jauld PE32/PE32+ linker. Native defaults to -O3 unless an optimization level is supplied.\n"
+              << "jauc obj emits <object>.jmeta (JAUMETA1) so jauld can infer target, ABI, subsystem and entry symbol.\n"
               << "Native .jaux packages can provide native_windows_x86_64/native_windows_x86 objects.\n"
               << "AOT interoperability: extern func c_function(a, b); Jau exports jau_fn_<name>.\n";
 }
@@ -145,8 +158,9 @@ int main(int argc, char** argv) {
     std::string cmd = argv[1];
     if (cmd == "--version" || cmd == "version") { std::cout << jau::version() << "\n"; return 0; }
     if (argc < 3) { help(); return 2; }
-    std::string input = argv[2], output, target, runtime; std::vector<std::string> runargs; jau::CompileOptions opt;
-    for (int i = 3; i < argc; ++i) { std::string a = argv[i]; if (a == "--") { for (++i; i < argc; ++i) runargs.push_back(argv[i]); break; } if (a == "-o" && i + 1 < argc) output = argv[++i]; else if (a == "--target" && i + 1 < argc) target = argv[++i]; else if (a == "--runtime" && i + 1 < argc) runtime = argv[++i]; else if (a == "--library") opt.library_mode = true; else if (a == "--link" && i + 1 < argc) opt.native_inputs.push_back(argv[++i]); else if (a == "-I" && i + 1 < argc) opt.import_paths.push_back(argv[++i]); else if (a.rfind("-O", 0) == 0 && a.size() == 3) opt.optimize = a[2] - '0'; }
+    std::string input = argv[2], output, target, runtime; std::vector<std::string> runargs; jau::CompileOptions opt; bool optimize_set=false;
+    for (int i = 3; i < argc; ++i) { std::string a = argv[i]; if (a == "--") { for (++i; i < argc; ++i) runargs.push_back(argv[i]); break; } if (a == "-o" && i + 1 < argc) output = argv[++i]; else if (a == "--target" && i + 1 < argc) target = argv[++i]; else if (a == "--runtime" && i + 1 < argc) runtime = argv[++i]; else if (a == "--library") opt.library_mode = true; else if (a == "--link" && i + 1 < argc) opt.native_inputs.push_back(argv[++i]); else if (a == "-I" && i + 1 < argc) opt.import_paths.push_back(argv[++i]); else if (a.rfind("-O", 0) == 0 && a.size() == 3 && a[2]>='0'&&a[2]<='3') {opt.optimize = a[2] - '0';optimize_set=true;} }
+    if(cmd=="native"&&!optimize_set)opt.optimize=3;
     jau::Result r;
     if (cmd == "run") r = jau::run_source(input, opt, runargs);
     else if (cmd == "build") { if (output.empty()) output = input.substr(0, input.find_last_of('.')) + ".jbc"; r = jau::compile_file(input, output, opt); }
@@ -157,7 +171,7 @@ int main(int argc, char** argv) {
 #else
             "jauas";
 #endif
-            int rc = run_process(assembler,{temp.string(),"-o",output,"--target",target,"--object"}); std::error_code ec; fs::remove(temp, ec); if (rc != 0) r = {false, "internal jauas object build failed"}; else r = {true, "object built: " + output + " (" + target + ", C ABI)"}; } }
+            int rc = run_process(assembler,{temp.string(),"-o",output,"--target",target,"--object"}); std::error_code ec; fs::remove(temp, ec); if (rc != 0) r = {false, "internal jauas object build failed"}; else {write_link_metadata(output,target,"jau_fn_main",opt.optimize,"jau-object");r = {true, "object built: " + output + " (" + target + ", C ABI); metadata: " + output + ".jmeta"};} } }
     else if (cmd == "native") { if (target.empty()) target = "linux-x86_64"; if (output.empty()) output = is_windows_target(target)?"jau-app.exe":"a.out"; r = is_windows_target(target)?windows_native_build(argv[0],input,output,target,opt):jau::native_build(input, output, target, opt); }
     else if (cmd == "standalone") { if (output.empty()) output = "jau-app"; if (runtime.empty()) { fs::path self = current_executable_path(argv[0]); runtime = (self.parent_path() /
 #ifdef _WIN32
