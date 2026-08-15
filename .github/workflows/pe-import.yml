@@ -1,0 +1,46 @@
+name: pe-import
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/jauld*'
+      - 'src/jauc_main.cpp'
+      - 'src/jauas_main.cpp'
+      - 'tests/native_print.jau'
+      - '.github/workflows/pe-import.yml'
+  workflow_dispatch:
+
+jobs:
+  windows-x64-imports:
+    runs-on: windows-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S . -B build -A x64 -DJAU_ENABLE_ASM_FASTOPS=OFF
+      - run: cmake --build build --config Release --parallel 2
+      - name: Build PE32+ with msvcrt import
+        shell: pwsh
+        run: |
+          .\build\Release\jauc.exe native tests\native_print.jau -o native-print.exe --target windows-x86_64
+          if (!(Test-Path .\native-print.exe)) { throw 'PE32+ output missing' }
+          cmd /c "native-print.exe > native-print.out"
+          if ($LASTEXITCODE -ne 0) { throw "PE32+ returned $LASTEXITCODE" }
+          $out = (Get-Content .\native-print.out -Raw).Trim()
+          if ($out -ne '42') { throw "PE32+ import output mismatch: $out" }
+
+  windows-x86-imports:
+    runs-on: windows-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S . -B build32 -A Win32 -DJAU_ENABLE_ASM_FASTOPS=OFF
+      - run: cmake --build build32 --config Release --parallel 2
+      - name: Build PE32 with msvcrt import
+        shell: pwsh
+        run: |
+          .\build32\Release\jauc.exe native tests\native_print.jau -o native-print32.exe --target windows-x86
+          if (!(Test-Path .\native-print32.exe)) { throw 'PE32 output missing' }
+          cmd /c "native-print32.exe > native-print32.out"
+          if ($LASTEXITCODE -ne 0) { throw "PE32 returned $LASTEXITCODE" }
+          $out = (Get-Content .\native-print32.out -Raw).Trim()
+          if ($out -ne '42') { throw "PE32 import output mismatch: $out" }
