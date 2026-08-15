@@ -5,7 +5,7 @@ static std::vector<std::unique_ptr<Stmt>> parse_file(const std::string&input,con
 static Program compile_program(const std::string&input,const CompileOptions&o){auto ast=parse_file(input,o);BC b;return b.compile(ast,o.optimize);}
 
 class AOT {
-    std::string target; bool is64=false, win=false, library=false; int label=0; std::ostringstream o;
+    std::string target; bool is64=false, win=false, library=false; int optimize=0,label=0; std::ostringstream o;
     std::unordered_map<std::string,Stmt*> funcs; std::unordered_set<std::string> externs;
     struct Ctx{std::unordered_map<std::string,int> locals,params;int next=0;std::string end;std::vector<std::string> breaks,continues;}; Ctx c;
     std::string L(){return ".L"+std::to_string(label++);} int word()const{return is64?8:4;}
@@ -19,6 +19,14 @@ class AOT {
         if(p!=c.params.end())o<<"  mov eax, DWORD PTR [ebp+"<<p->second<<"]\n";
         else o<<"  mov "<<(is64?"rax, QWORD PTR [rbp-":"eax, DWORD PTR [ebp-")<<slot(n)<<"]\n";
         push(is64?"rax":"eax");
+    }
+    bool simple_atom(Expr*e)const{
+        if(!e)return false;if(e->k==Expr::Var)return true;if(e->k!=Expr::Lit)return false;return std::holds_alternative<int64_t>(e->v.data)||std::holds_alternative<bool>(e->v.data);
+    }
+    void atom_to(Expr*e,const std::string&reg){
+        if(e->k==Expr::Lit){if(auto p=std::get_if<int64_t>(&e->v.data)){o<<"  mov "<<reg<<", "<<*p<<"\n";return;}if(auto p=std::get_if<bool>(&e->v.data)){o<<"  mov "<<reg<<", "<<(*p?1:0)<<"\n";return;}}
+        if(e->k==Expr::Var){auto p=c.params.find(e->text);if(p!=c.params.end())o<<"  mov "<<reg<<", DWORD PTR [ebp+"<<p->second<<"]\n";else o<<"  mov "<<reg<<", "<<(is64?"QWORD PTR [rbp-":"DWORD PTR [ebp-")<<slot(e->text)<<"]\n";return;}
+        throw Error("internal AOT atom error");
     }
     void emit_args64(const std::vector<std::unique_ptr<Expr>>&args){
         static const std::vector<std::string> wregs={"rcx","rdx","r8","r9"};
@@ -40,6 +48,11 @@ class AOT {
             if(!args.empty())o<<"  add esp, "<<(args.size()*4)<<"\n";
         }
         push(is64?"rax":"eax");
+    }
+    void emit_time_ms(bool nanos){
+        if(!win)throw Error("time.now_ms/time.now_ns AOT intrinsic is currently implemented for Windows targets; VM mode is cross-platform");
+        if(is64){o<<"  sub rsp, 32\n  call GetTickCount64\n  add rsp, 32\n";if(nanos)o<<"  imul rax, rax, 1000000\n";push("rax");}
+        else{o<<"  call GetTickCount\n";if(nanos)o<<"  imul eax, eax, 1000000\n";push("eax");}
     }
     void ex(Expr*e){
         if(!e){o<<"  xor eax,eax\n";push(is64?"rax":"eax");return;}
@@ -63,7 +76,9 @@ class AOT {
             push(is64?"rax":"eax");return;
         }
         if(e->k==Expr::Binary){
-            ex(e->a.get());ex(e->b.get());pop(is64?"rcx":"ecx");pop(is64?"rax":"eax");std::string op=e->text;
+            if(optimize>=2&&simple_atom(e->a.get())&&simple_atom(e->b.get())){atom_to(e->a.get(),is64?"rax":"eax");atom_to(e->b.get(),is64?"rcx":"ecx");}
+            else{ex(e->a.get());ex(e->b.get());pop(is64?"rcx":"ecx");pop(is64?"rax":"eax");}
+            std::string op=e->text;
             if(op=="+")o<<"  add "<<(is64?"rax, rcx":"eax, ecx")<<"\n";
             else if(op=="-")o<<"  sub "<<(is64?"rax, rcx":"eax, ecx")<<"\n";
             else if(op=="*")o<<"  imul "<<(is64?"rax, rcx":"eax, ecx")<<"\n";
@@ -75,6 +90,8 @@ class AOT {
         }
         if(e->k==Expr::Call&&e->a&&e->a->k==Expr::Var){
             std::string n=e->a->text;
+            if((n=="time.now_ms"||n=="clock_ms")&&e->args.empty()){emit_time_ms(false);return;}
+            if((n=="time.now_ns"||n=="clock_ns")&&e->args.empty()){emit_time_ms(true);return;}
             if(n=="print"&&e->args.size()==1){
                 ex(e->args[0].get());pop(is64?"rax":"eax");
                 if(is64){
@@ -116,15 +133,26 @@ class AOT {
         for(auto&x:s->body)st(x.get());
         o<<"  xor eax,eax\n"<<c.end<<":\n  leave\n  ret\n";
     }
+    std::string peephole(std::string s)const{
+        if(optimize<2)return s;
+        const std::vector<std::pair<std::string,std::string>> rules={
+            {"  push rax\n  pop rax\n",""},{"  push eax\n  pop eax\n",""},
+            {"  push rcx\n  pop rcx\n",""},{"  push ecx\n  pop ecx\n",""},
+            {"  push rax\n  add rsp,8\n",""},{"  push eax\n  add esp,4\n",""}
+        };
+        for(auto&r:rules){for(size_t p=0;(p=s.find(r.first,p))!=std::string::npos;)s.replace(p,r.first.size(),r.second);}
+        return s;
+    }
 public:
-    AOT(std::string t,bool lib=false):target(std::move(t)),library(lib){
+    AOT(std::string t,bool lib=false,int opt=0):target(std::move(t)),library(lib),optimize(opt){
         win=target.rfind("windows",0)==0;is64=target.find("x86_64")!=std::string::npos;
         if(target!="linux-x86_64"&&target!="linux-x86"&&target!="windows-x86_64"&&target!="windows-x86")throw Error("unknown target: "+target);
     }
     std::string gen(std::vector<std::unique_ptr<Stmt>>&ast){
-        optimize_stmts(ast);
+        if(optimize>0)optimize_stmts(ast);
         for(auto&s:ast)if(s->k==Stmt::FuncS){if(s->external)externs.insert(s->name);else funcs[s->name]=s.get();}
         o<<".intel_syntax noprefix\n.section .rodata\nfmt_i: .asciz \""<<(is64?"%lld":"%d")<<"\\n\"\n.text\n.extern printf\n";
+        if(win)o<<".extern GetTickCount\n.extern GetTickCount64\n";
         for(auto&n:externs)o<<".extern "<<foreign_sym(n)<<"\n";
         for(auto&s:ast)if(s->k==Stmt::FuncS&&!s->external)emit_func(s.get());
         if(!library){
@@ -132,13 +160,13 @@ public:
             for(auto&s:ast)if(s->k!=Stmt::FuncS)st(s.get());
             o<<"  xor eax,eax\n"<<c.end<<":\n  leave\n  ret\n";
         }
-        return o.str();
+        return peephole(o.str());
     }
 };
 Result compile_file(const std::string&input,const std::string&output,const CompileOptions&o){try{auto p=compile_program(input,o);save(p,output);return {true,"built "+output};}catch(const std::exception&e){return {false,e.what()};}}
 Result run_source(const std::string&input,const CompileOptions&o,const std::vector<std::string>&args){try{g_runtime_args=args;VM vm(compile_program(input,o));vm.run();return {true,""};}catch(const std::exception&e){return {false,e.what()};}}
 Result run_bytecode(const std::string&input,const std::vector<std::string>&args){try{g_runtime_args=args;VM vm(load(input));vm.run();return {true,""};}catch(const std::exception&e){return {false,e.what()};}}
-Result emit_assembly(const std::string&input,const std::string&output,const std::string&target,const CompileOptions&o){try{auto ast=parse_file(input,o);AOT a(target,o.library_mode);write_text(output,a.gen(ast));return {true,"assembly emitted: "+output+" ("+target+")"};}catch(const std::exception&e){return {false,e.what()};}}
+Result emit_assembly(const std::string&input,const std::string&output,const std::string&target,const CompileOptions&o){try{auto ast=parse_file(input,o);AOT a(target,o.library_mode,o.optimize);write_text(output,a.gen(ast));return {true,"assembly emitted: "+output+" ("+target+", O"+std::to_string(o.optimize)+")"};}catch(const std::exception&e){return {false,e.what()};}}
 Result native_build(const std::string&input,const std::string&output,const std::string&target,const CompileOptions&o){try{
     auto tmp=fs::temp_directory_path()/"jau_native.s";auto r=emit_assembly(input,tmp.string(),target,o);if(!r.ok)return r;
     bool cpp=false;for(auto&x:o.native_inputs){auto e=lower_copy(fs::path(x).extension().string());if(e==".cpp"||e==".cxx"||e==".cc"||e==".c++")cpp=true;}
@@ -166,5 +194,5 @@ Result run_embedded_executable(const std::string&exe,const std::vector<std::stri
     std::ifstream in(exe,std::ios::binary);if(!in)throw Error("cannot open executable");in.seekg(0,std::ios::end);auto end=in.tellg();if(end<(std::streamoff)16)throw Error("no embedded Jau payload");in.seekg(end-(std::streamoff)16);uint64_t n=0;char magic[8];in.read((char*)&n,8);in.read(magic,8);if(std::memcmp(magic,"JAUEXEC1",8))throw Error("no embedded Jau payload");if(n>(uint64_t)(end-(std::streamoff)16))throw Error("corrupt embedded payload");in.seekg(end-(std::streamoff)16-(std::streamoff)n);std::vector<char> data((size_t)n);in.read(data.data(),(std::streamsize)n);
     fs::path tmp=fs::temp_directory_path()/("jau_embedded_"+std::to_string(fnv1a64(exe))+".jbc");{std::ofstream o2(tmp,std::ios::binary);o2.write(data.data(),(std::streamsize)data.size());}auto rr=run_bytecode(tmp.string(),args);std::error_code ec;fs::remove(tmp,ec);return rr;
 }catch(const std::exception&e){return {false,e.what()};}}
-std::string version(){return "0.6.0";}
+std::string version(){return "0.7.0";}
 }
