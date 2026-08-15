@@ -40,7 +40,7 @@ static std::string undecorate(std::string n){
 static bool is_indirect_import(const std::string&n){return n.rfind("__imp_",0)==0||n.rfind("_imp__",0)==0;}
 static std::string import_dll(const std::string&canon){
     static const std::unordered_set<std::string> crt={"printf","puts","putchar","sprintf","snprintf","malloc","calloc","realloc","free","memcpy","memmove","memset","strlen","strcmp","strncmp","atoi","strtol","exit","abort"};
-    static const std::unordered_set<std::string> k32={"ExitProcess","GetStdHandle","WriteFile","ReadFile","Sleep","GetLastError","SetLastError"};
+    static const std::unordered_set<std::string> k32={"ExitProcess","GetStdHandle","WriteFile","ReadFile","Sleep","GetLastError","SetLastError","GetTickCount","GetTickCount64","QueryPerformanceCounter","QueryPerformanceFrequency"};
     if(crt.count(canon))return "msvcrt.dll";if(k32.count(canon))return "kernel32.dll";return "";
 }
 
