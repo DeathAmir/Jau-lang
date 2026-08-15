@@ -1,0 +1,78 @@
+name: pe-debug
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/jauld*'
+      - 'src/jauc_main.cpp'
+      - 'src/jauas_main.cpp'
+      - 'tests/native_simple.jau'
+      - '.github/workflows/pe-debug.yml'
+  workflow_dispatch:
+
+jobs:
+  pe-x64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S . -B build -A x64 -DJAU_ENABLE_ASM_FASTOPS=OFF
+      - run: cmake --build build --config Release --parallel 2
+      - name: Build internal PE32+
+        shell: pwsh
+        run: .\build\Release\jauc.exe native tests\native_simple.jau -o self-native.exe --target windows-x86_64
+      - name: Dump PE32+ headers
+        shell: cmd
+        run: |
+          dumpbin /headers self-native.exe
+          dumpbin /imports self-native.exe
+      - name: Launch PE32+
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          try {
+            $p = Start-Process -FilePath .\self-native.exe -PassThru
+            if (!$p.WaitForExit(3000)) { Stop-Process -Id $p.Id -Force; throw 'hung' }
+            Write-Host "exit=$($p.ExitCode)"
+            if ($p.ExitCode -ne 0) { exit 1 }
+          } catch {
+            Write-Host $_.Exception.ToString()
+            exit 1
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pe-debug-x64
+          path: self-native.exe
+
+  pe-x86:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S . -B build32 -A Win32 -DJAU_ENABLE_ASM_FASTOPS=OFF
+      - run: cmake --build build32 --config Release --parallel 2
+      - name: Build internal PE32
+        shell: pwsh
+        run: .\build32\Release\jauc.exe native tests\native_simple.jau -o self-native32.exe --target windows-x86
+      - name: Dump PE32 headers
+        shell: cmd
+        run: |
+          dumpbin /headers self-native32.exe
+          dumpbin /imports self-native32.exe
+      - name: Launch PE32
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          try {
+            $p = Start-Process -FilePath .\self-native32.exe -PassThru
+            if (!$p.WaitForExit(3000)) { Stop-Process -Id $p.Id -Force; throw 'hung' }
+            Write-Host "exit=$($p.ExitCode)"
+            if ($p.ExitCode -ne 0) { exit 1 }
+          } catch {
+            Write-Host $_.Exception.ToString()
+            exit 1
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pe-debug-x86
+          path: self-native32.exe
