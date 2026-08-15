@@ -51,6 +51,10 @@ class AOT {
     }
     void emit_time_ms(bool nanos){
         if(!win)throw Error("time.now_ms/time.now_ns AOT intrinsic is currently implemented for Windows targets; VM mode is cross-platform");
+        // Do not emit unconditional .extern directives in the AOT header. jauas
+        // promotes unresolved call targets to extern symbols only when a timing
+        // intrinsic is actually referenced. This keeps ordinary C-ABI objects
+        // free of unused GetTickCount/GetTickCount64 undefined symbols.
         if(is64){o<<"  sub rsp, 32\n  call GetTickCount64\n  add rsp, 32\n";if(nanos)o<<"  imul rax, rax, 1000000\n";push("rax");}
         else{o<<"  call GetTickCount\n";if(nanos)o<<"  imul eax, eax, 1000000\n";push("eax");}
     }
@@ -152,7 +156,6 @@ public:
         if(optimize>0)optimize_stmts(ast);
         for(auto&s:ast)if(s->k==Stmt::FuncS){if(s->external)externs.insert(s->name);else funcs[s->name]=s.get();}
         o<<".intel_syntax noprefix\n.section .rodata\nfmt_i: .asciz \""<<(is64?"%lld":"%d")<<"\\n\"\n.text\n.extern printf\n";
-        if(win)o<<".extern GetTickCount\n.extern GetTickCount64\n";
         for(auto&n:externs)o<<".extern "<<foreign_sym(n)<<"\n";
         for(auto&s:ast)if(s->k==Stmt::FuncS&&!s->external)emit_func(s.get());
         if(!library){
