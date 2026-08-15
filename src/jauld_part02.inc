@@ -52,10 +52,14 @@ static void add_entry_and_thunks(LinkState&st,uint32_t&entry_off,std::unordered_
     st.outs[0].virtual_size=(uint32_t)text.size();
 }
 
-static uint32_t find_global_rva(LinkState&st,const std::vector<std::string>&names){for(auto&n:names){auto it=st.globals.find(n);if(it!=st.globals.end())return symbol_rva(st,it->second.obj,st.objs[it->second.obj].symbols[it->second.sym]);}throw std::runtime_error("entry symbol not found (expected main)");}
+static uint32_t find_global_rva(LinkState&st,const std::vector<std::string>&names){
+    for(auto&n:names){auto it=st.globals.find(n);if(it!=st.globals.end())return symbol_rva(st,it->second.obj,st.objs[it->second.obj].symbols[it->second.sym]);}
+    std::string tried;for(size_t i=0;i<names.size();++i){if(i)tried+=", ";tried+=names[i];}
+    throw std::runtime_error("entry symbol not found; tried: "+tried);
+}
 static void patch_rel32(std::vector<uint8_t>&data,size_t off,uint32_t place_rva,uint32_t target_rva,int extra=0){int32_t add=(int32_t)r32(data,off);int64_t v=(int64_t)add+(int64_t)target_rva-(int64_t)(place_rva+4u+(uint32_t)extra);if(v<INT32_MIN||v>INT32_MAX)throw std::runtime_error("REL32 out of range");p32(data,off,(uint32_t)(int32_t)v);}
 
-static int link_pe(const std::vector<std::string>&inputs,const std::string&output,const std::string&target){
+static int link_pe(const std::vector<std::string>&inputs,const std::string&output,const std::string&target,const std::string&entry){
     if(inputs.empty())throw std::runtime_error("no object inputs");LinkState st;st.x64=target=="windows-x86_64";if(!st.x64&&target!="windows-x86")throw std::runtime_error("jauld supports windows-x86_64/windows-x86");st.machine=st.x64?0x8664:0x014c;st.image_base=st.x64?0x140000000ull:0x00400000ull;
     for(auto&p:inputs){auto o=read_coff(p);if(o.machine!=st.machine)throw std::runtime_error("object architecture mismatch: "+p);st.objs.push_back(std::move(o));}
     st.outs={{".text",{},0,0,0,0,0x60000020u},{".rdata",{},0,0,0,0,0x40000040u},{".data",{},0,0,0,0,0xC0000040u},{".idata",{},0,0,0,0,0xC0000040u}};
