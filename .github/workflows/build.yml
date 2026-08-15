@@ -66,7 +66,9 @@ jobs:
         run: |
           .\build\Release\jauc.exe native tests\native_simple.jau -o self-native.exe --target windows-x86_64
           if (!(Test-Path .\self-native.exe)) { throw "internal linker did not create self-native.exe" }
-          $out = & .\self-native.exe
+          cmd /c "self-native.exe > self-native.out"
+          if ($LASTEXITCODE -ne 0) { throw "internal PE32+ executable failed with exit code $LASTEXITCODE" }
+          $out = (Get-Content .\self-native.out -Raw).Trim()
           if ($out -ne "42") { throw "internal PE32+ executable output mismatch: $out" }
       - shell: pwsh
         run: |
@@ -118,7 +120,9 @@ jobs:
           $env:JAU_HOME="$PWD\native-home"
           & $pm install .\extpkg\dist\CppMath-1.0.0.jaux
           & $jauc native tests\native_extension_consumer.jau -o native-extension.exe --target windows-x86_64
-          $out = & .\native-extension.exe
+          cmd /c "native-extension.exe > native-extension.out"
+          if ($LASTEXITCODE -ne 0) { throw "native .jaux extension executable failed with exit code $LASTEXITCODE" }
+          $out = (Get-Content .\native-extension.out -Raw).Trim()
           if ($out -ne "42") { throw "native .jaux extension failed: $out" }
       - name: Jau C ABI object interop
         shell: pwsh
@@ -172,7 +176,9 @@ jobs:
         run: |
           .\build32\Release\jauc.exe native tests\native_simple.jau -o self-native32.exe --target windows-x86
           if (!(Test-Path .\self-native32.exe)) { throw "internal linker did not create self-native32.exe" }
-          $out = & .\self-native32.exe
+          cmd /c "self-native32.exe > self-native32.out"
+          if ($LASTEXITCODE -ne 0) { throw "internal PE32 executable failed with exit code $LASTEXITCODE" }
+          $out = (Get-Content .\self-native32.out -Raw).Trim()
           if ($out -ne "42") { throw "internal PE32 executable output mismatch: $out" }
       - shell: pwsh
         run: |
@@ -195,7 +201,9 @@ jobs:
           $env:JAU_HOME="$PWD\native-home32"
           & $pm install .\extpkg32\dist\CppMath-1.0.0.jaux
           & $jauc native tests\native_extension_consumer.jau -o native-extension32.exe --target windows-x86
-          $out = & .\native-extension32.exe
+          cmd /c "native-extension32.exe > native-extension32.out"
+          if ($LASTEXITCODE -ne 0) { throw "native x86 .jaux extension executable failed with exit code $LASTEXITCODE" }
+          $out = (Get-Content .\native-extension32.out -Raw).Trim()
           if ($out -ne "42") { throw "native x86 .jaux extension failed: $out" }
       - name: Jau C ABI object interop x86
         shell: pwsh
