@@ -1,0 +1,7 @@
+extern func cppmath_mul(a, b);
+
+namespace CppMath {
+    func mul(a, b) {
+        return cppmath_mul(a, b);
+    }
+}
