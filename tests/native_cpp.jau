@@ -1,0 +1,2 @@
+extern func cpp_mul(a, b);
+print(cpp_mul(6, 7));

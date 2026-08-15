@@ -8,6 +8,7 @@ struct CompileOptions {
     int optimize = 2;
     bool library_mode = false;
     std::vector<std::string> import_paths;
+    std::vector<std::string> native_inputs;
 };
 struct Result {
     bool ok = false;

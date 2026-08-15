@@ -50,6 +50,32 @@ static bool is_windows_target(const std::string& target) {
     return target.rfind("windows-", 0) == 0;
 }
 
+static int run_internal_assembler(const fs::path& assembler, const fs::path& input, const std::string& output, const std::string& target) {
+#ifdef _WIN32
+    std::string command = quote(assembler.string()) + " " + quote(input.string()) + " -o " + quote(output) +
+                          " --target " + quote(target) + " --object";
+    std::vector<char> mutable_command(command.begin(), command.end());
+    mutable_command.push_back('\0');
+    STARTUPINFOA si{};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi{};
+    std::string application = assembler.string();
+    if (!CreateProcessA(application.c_str(), mutable_command.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
+        return -1;
+    }
+    WaitForSingleObject(pi.hProcess, INFINITE);
+    DWORD code = 1;
+    GetExitCodeProcess(pi.hProcess, &code);
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    return static_cast<int>(code);
+#else
+    std::string command = quote(assembler.string()) + " " + quote(input.string()) + " -o " + quote(output) +
+                          " --target " + quote(target) + " --object";
+    return std::system(command.c_str());
+#endif
+}
+
 static void help() {
     std::cout << "Jau compiler " << jau::version() << "\n"
               << "usage:\n"
@@ -57,7 +83,7 @@ static void help() {
               << "  jauc run <file.jau>\n"
               << "  jauc asm <file.jau> -o out.s --target <linux-x86_64|linux-x86|windows-x86_64|windows-x86> [--library]\n"
               << "  jauc obj <file.jau> -o out.o|out.obj --target <target>\n"
-              << "  jauc native <file.jau> -o program --target <target>\n"
+              << "  jauc native <file.jau> -o program --target <target> [--link file.c|file.cpp|file.o]\n"
               << "  jauc standalone <file.jau> -o program [--runtime path/to/jur]\n"
               << "  jauc --version\n\n"
               << "AOT interoperability:\n"
@@ -88,6 +114,7 @@ int main(int argc, char** argv) {
         else if (a == "--target" && i + 1 < argc) target = argv[++i];
         else if (a == "--runtime" && i + 1 < argc) runtime = argv[++i];
         else if (a == "--library") opt.library_mode = true;
+        else if (a == "--link" && i + 1 < argc) opt.native_inputs.push_back(argv[++i]);
         else if (a == "-I" && i + 1 < argc) opt.import_paths.push_back(argv[++i]);
         else if (a.rfind("-O", 0) == 0 && a.size() == 3) opt.optimize = a[2] - '0';
     }
@@ -116,9 +143,7 @@ int main(int argc, char** argv) {
 #else
                 "jauas";
 #endif
-            std::string command = quote(assembler.string()) + " " + quote(temp.string()) + " -o " + quote(output) +
-                                  " --target " + quote(target) + " --object";
-            int rc = std::system(command.c_str());
+            int rc = run_internal_assembler(assembler, temp, output, target);
             std::error_code ec; fs::remove(temp, ec);
             if (rc != 0) r = {false, "internal jauas object build failed"};
             else r = {true, "object built: " + output + " (" + target + ", C ABI)"};

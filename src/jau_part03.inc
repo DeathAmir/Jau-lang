@@ -139,7 +139,20 @@ Result compile_file(const std::string&input,const std::string&output,const Compi
 Result run_source(const std::string&input,const CompileOptions&o,const std::vector<std::string>&args){try{g_runtime_args=args;VM vm(compile_program(input,o));vm.run();return {true,""};}catch(const std::exception&e){return {false,e.what()};}}
 Result run_bytecode(const std::string&input,const std::vector<std::string>&args){try{g_runtime_args=args;VM vm(load(input));vm.run();return {true,""};}catch(const std::exception&e){return {false,e.what()};}}
 Result emit_assembly(const std::string&input,const std::string&output,const std::string&target,const CompileOptions&o){try{auto ast=parse_file(input,o);AOT a(target,o.library_mode);write_text(output,a.gen(ast));return {true,"assembly emitted: "+output+" ("+target+")"};}catch(const std::exception&e){return {false,e.what()};}}
-Result native_build(const std::string&input,const std::string&output,const std::string&target,const CompileOptions&o){try{auto tmp=fs::temp_directory_path()/"jau_native.s";auto r=emit_assembly(input,tmp.string(),target,o);if(!r.ok)return r;std::string cc;if(target=="linux-x86_64")cc="cc -no-pie "+tmp.string()+" -o "+output;else if(target=="linux-x86")cc="cc -m32 -no-pie "+tmp.string()+" -o "+output;else if(target=="windows-x86_64")cc="x86_64-w64-mingw32-gcc -no-pie "+tmp.string()+" -o "+output+".exe";else cc="i686-w64-mingw32-gcc -no-pie "+tmp.string()+" -o "+output+".exe";int rc=std::system(cc.c_str());if(rc!=0)return {false,"native linker failed; install the target GCC/MinGW toolchain. command: "+cc};return {true,"native executable built"};}catch(const std::exception&e){return {false,e.what()};}}
+Result native_build(const std::string&input,const std::string&output,const std::string&target,const CompileOptions&o){try{
+    auto tmp=fs::temp_directory_path()/"jau_native.s";auto r=emit_assembly(input,tmp.string(),target,o);if(!r.ok)return r;
+    bool cpp=false;for(auto&x:o.native_inputs){auto e=lower_copy(fs::path(x).extension().string());if(e==".cpp"||e==".cxx"||e==".cc"||e==".c++")cpp=true;}
+    std::string cc;
+    if(target=="linux-x86_64")cc=(cpp?"c++":"cc")+std::string(" -no-pie ")+shell_quote(tmp.string());
+    else if(target=="linux-x86")cc=(cpp?"c++":"cc")+std::string(" -m32 -no-pie ")+shell_quote(tmp.string());
+    else if(target=="windows-x86_64")cc=(cpp?"x86_64-w64-mingw32-g++":"x86_64-w64-mingw32-gcc")+std::string(" -no-pie ")+shell_quote(tmp.string());
+    else if(target=="windows-x86")cc=(cpp?"i686-w64-mingw32-g++":"i686-w64-mingw32-gcc")+std::string(" -no-pie ")+shell_quote(tmp.string());
+    else return {false,"unknown target: "+target};
+    for(auto&x:o.native_inputs)cc+=" "+shell_quote(x);
+    std::string final_out=output;if(target.rfind("windows-",0)==0&&lower_copy(fs::path(final_out).extension().string())!=".exe")final_out+=".exe";
+    cc+=" -o "+shell_quote(final_out);
+    int rc=std::system(cc.c_str());if(rc!=0)return {false,"native linker failed; install the target C/C++ toolchain. command: "+cc};return {true,"native executable built: "+final_out};
+}catch(const std::exception&e){return {false,e.what()};}}
 Result bundle_executable(const std::string&input,const std::string&output,const std::string&runtime_path,const CompileOptions&o){try{
     fs::path tmp=fs::temp_directory_path()/("jau_bundle_"+std::to_string(fnv1a64(input))+".jbc");auto r=compile_file(input,tmp.string(),o);if(!r.ok)return r;
     std::ifstream runtime(runtime_path,std::ios::binary),bc(tmp,std::ios::binary);if(!runtime)throw Error("cannot open runtime: "+runtime_path);if(!bc)throw Error("cannot open temporary bytecode");
