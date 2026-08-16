@@ -78,10 +78,23 @@ jobs:
       - name: Multi-object native and DLL x64
         shell: pwsh
         run: |
-          .\build\Release\jauc.exe native tests\multi_native.jau -o multi-native.exe --target windows-x86_64 --link tests\multi_native_left.cpp --link tests\multi_native_right.cpp
+          Remove-Item -Recurse -Force multi-obj-x64 -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory multi-obj-x64 | Out-Null
+          $leftSrc = (Resolve-Path .\tests\multi_native_left.cpp).Path.Replace("\","/")
+          $rightSrc = (Resolve-Path .\tests\multi_native_right.cpp).Path.Replace("\","/")
+          Set-Content -Encoding utf8 multi-obj-x64\CMakeLists.txt 'cmake_minimum_required(VERSION 3.16)'
+          Add-Content -Encoding utf8 multi-obj-x64\CMakeLists.txt 'project(JauMultiObj LANGUAGES CXX)'
+          Add-Content -Encoding utf8 multi-obj-x64\CMakeLists.txt "add_library(left OBJECT `"$leftSrc`")"
+          Add-Content -Encoding utf8 multi-obj-x64\CMakeLists.txt "add_library(right OBJECT `"$rightSrc`")"
+          cmake -S multi-obj-x64 -B multi-obj-x64\build -A x64
+          cmake --build multi-obj-x64\build --config Release --parallel 2
+          $left = (Get-ChildItem -Recurse multi-obj-x64\build -Filter 'multi_native_left*.obj' | Select-Object -First 1).FullName
+          $right = (Get-ChildItem -Recurse multi-obj-x64\build -Filter 'multi_native_right*.obj' | Select-Object -First 1).FullName
+          if (!$left -or !$right) { throw "C++ object fixture build failed" }
+          .\build\Release\jauc.exe native tests\multi_native.jau -o multi-native.exe --target windows-x86_64 --link $left --link $right
           $out = & .\multi-native.exe
           if ($out -ne "42") { throw "multi-object native output mismatch: $out" }
-          .\build\Release\jauc.exe shared tests\multi_native.jau -o multi-native.dll --target windows-x86_64 --link tests\multi_native_left.cpp --link tests\multi_native_right.cpp --export calculate
+          .\build\Release\jauc.exe shared tests\multi_native.jau -o multi-native.dll --target windows-x86_64 --link $left --link $right --export calculate
           if (!(Test-Path .\multi-native.dll)) { throw "multi-object DLL was not created" }
       - run: .\build\Release\jauc.exe asm tests\aot_functions.jau -o native-windows-x64.s --target windows-x86_64
       - name: Internal PE32+ native linker
@@ -210,10 +223,23 @@ jobs:
       - name: Multi-object native and DLL x86
         shell: pwsh
         run: |
-          .\build32\Release\jauc.exe native tests\multi_native.jau -o multi-native32.exe --target windows-x86 --link tests\multi_native_left.cpp --link tests\multi_native_right.cpp
+          Remove-Item -Recurse -Force multi-obj-x86 -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory multi-obj-x86 | Out-Null
+          $leftSrc = (Resolve-Path .\tests\multi_native_left.cpp).Path.Replace("\","/")
+          $rightSrc = (Resolve-Path .\tests\multi_native_right.cpp).Path.Replace("\","/")
+          Set-Content -Encoding utf8 multi-obj-x86\CMakeLists.txt 'cmake_minimum_required(VERSION 3.16)'
+          Add-Content -Encoding utf8 multi-obj-x86\CMakeLists.txt 'project(JauMultiObj32 LANGUAGES CXX)'
+          Add-Content -Encoding utf8 multi-obj-x86\CMakeLists.txt "add_library(left OBJECT `"$leftSrc`")"
+          Add-Content -Encoding utf8 multi-obj-x86\CMakeLists.txt "add_library(right OBJECT `"$rightSrc`")"
+          cmake -S multi-obj-x86 -B multi-obj-x86\build -A Win32
+          cmake --build multi-obj-x86\build --config Release --parallel 2
+          $left = (Get-ChildItem -Recurse multi-obj-x86\build -Filter 'multi_native_left*.obj' | Select-Object -First 1).FullName
+          $right = (Get-ChildItem -Recurse multi-obj-x86\build -Filter 'multi_native_right*.obj' | Select-Object -First 1).FullName
+          if (!$left -or !$right) { throw "C++ x86 object fixture build failed" }
+          .\build32\Release\jauc.exe native tests\multi_native.jau -o multi-native32.exe --target windows-x86 --link $left --link $right
           $out = & .\multi-native32.exe
           if ($out -ne "42") { throw "multi-object x86 native output mismatch: $out" }
-          .\build32\Release\jauc.exe shared tests\multi_native.jau -o multi-native32.dll --target windows-x86 --link tests\multi_native_left.cpp --link tests\multi_native_right.cpp --export calculate
+          .\build32\Release\jauc.exe shared tests\multi_native.jau -o multi-native32.dll --target windows-x86 --link $left --link $right --export calculate
           if (!(Test-Path .\multi-native32.dll)) { throw "multi-object x86 DLL was not created" }
       - run: .\build32\Release\jauc.exe asm examples\native.jau -o native-windows-x86.s --target windows-x86
       - name: Internal PE32 native linker
