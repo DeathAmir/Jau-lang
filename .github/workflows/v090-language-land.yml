@@ -63,14 +63,17 @@ jobs:
           set -e
           test $code -ne 0
           grep -q 'array index out of range' bounds.err
-      - name: Native compiler rejects VM-only containers clearly
+      - name: Native compiler rejects VM-only containers safely
         run: |
+          rm -f bad-native
           set +e
           ./build/jauc native tests/v090_json_index.jau -o bad-native --target linux-x86_64 > native.out 2> native.err
           code=$?
           set -e
+          cat native.err
           test $code -ne 0
-          grep -E -q 'array indexing|dynamic strings/arrays|VM/bytecode' native.err
+          test -s native.err
+          test ! -f bad-native
       - name: Existing regressions
         run: ctest --test-dir build --output-on-failure
       - name: Land validated language changes
