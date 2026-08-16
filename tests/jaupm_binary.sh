@@ -8,7 +8,7 @@ trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/isolated" "$TMP/pkg"
 cp "$JAUPM" "$TMP/isolated/jaupm"
 chmod +x "$TMP/isolated/jaupm"
-[ "$("$TMP/isolated/jaupm" version)" = "JauPM 0.6" ]
+[ "$("$TMP/isolated/jaupm" version)" = "JauPM 0.7" ]
 cd "$TMP/pkg"
 "$JAUPM" init iRx
 "$JAUPM" pack
