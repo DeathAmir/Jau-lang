@@ -1,0 +1,76 @@
+name: v080-core-retry
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/v080-core-retry.yml'
+permissions:
+  contents: write
+jobs:
+  upgrade:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - name: Reuse and apply validated patch script
+        shell: pwsh
+        run: |
+          $text = Get-Content .github\workflows\v080-core-upgrade.yml -Raw
+          $start = $text.IndexOf("          @'`n")
+          $end = $text.IndexOf("          '@ | Set-Content -Encoding utf8 patch_v080.py")
+          if ($start -lt 0 -or $end -lt 0) { throw 'embedded patch script not found' }
+          $py = $text.Substring($start + 13, $end - ($start + 13))
+          $lines = $py -split "`n" | ForEach-Object { if ($_.StartsWith('          ')) { $_.Substring(10) } else { $_ } }
+          $lines -join "`n" | Set-Content -Encoding utf8 patch_v080.py
+          python patch_v080.py
+          Remove-Item patch_v080.py
+          @'
+          cmake_minimum_required(VERSION 3.16)
+          project(MathAlias LANGUAGES CXX)
+          add_library(mathx OBJECT mathx.cpp)
+          '@ | Set-Content -Encoding utf8 tests\native_alias\CMakeLists.txt
+          Remove-Item .github\workflows\v080-core-retry.yml -Force
+      - name: Build Jau 0.8 x64
+        shell: pwsh
+        run: |
+          cmake -S . -B build -A x64 -DJAU_ENABLE_ASM_FASTOPS=OFF
+          cmake --build build --config Release --parallel 2
+          if ((& .\build\Release\jauc.exe --version) -ne '0.8.0') { throw 'wrong Jau version' }
+      - name: Build decorated C++ object through CMake
+        shell: pwsh
+        run: |
+          cmake -S tests\native_alias -B aliasbuild -A x64
+          cmake --build aliasbuild --config Release --parallel 2
+          $obj=Get-ChildItem aliasbuild -Recurse -Filter mathx.obj | Select-Object -First 1
+          if(!$obj){throw 'mathx.obj not generated'}
+          New-Item -ItemType Directory -Force aliaspkg\src,aliaspkg\native\windows-x86_64 | Out-Null
+          Copy-Item tests\native_alias\jau.pkg aliaspkg\jau.pkg
+          Copy-Item tests\native_alias\src\main.jau aliaspkg\src\main.jau
+          Copy-Item $obj.FullName aliaspkg\native\windows-x86_64\mathx.obj
+          $pm=(Resolve-Path .\build\Release\jaupm.exe).Path
+          $jauc=(Resolve-Path .\build\Release\jauc.exe).Path
+          Push-Location aliaspkg
+          & $pm pack dist\MathAlias-1.0.0.jaux
+          Pop-Location
+          $env:JAU_HOME="$PWD\alias-home"
+          & $pm install .\aliaspkg\dist\MathAlias-1.0.0.jaux
+          & $jauc asm tests\native_alias_consumer.jau -o alias.s --target windows-x86_64 --debug 2> alias-debug.txt
+          if (!(Select-String alias.s -Pattern 'call _mx_add' -Quiet)) { Get-Content alias.s; throw 'AOT did not use discovered _mx_add symbol' }
+          if (!(Select-String alias-debug.txt -Pattern '\[jauc:symbol\] _mx_add' -Quiet)) { Get-Content alias-debug.txt; throw 'native symbol missing from debug trace' }
+          & $jauc native tests\native_alias_consumer.jau -o alias.exe --target windows-x86_64 --debug
+          $p=Start-Process .\alias.exe -PassThru
+          if(!$p.WaitForExit(5000)){Stop-Process -Id $p.Id -Force;throw 'native alias executable hung'}
+          if($p.ExitCode -ne 0){throw "native alias executable failed: $($p.ExitCode)"}
+          & $jauc check tests\native_alias_consumer.jau --target windows-x86_64 --debug
+      - name: Existing x64 regression suite
+        shell: pwsh
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Commit core upgrade
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Jau 0.8: resolve native package COFF symbols in AOT and add debug diagnostics"
+          git push origin HEAD:main
