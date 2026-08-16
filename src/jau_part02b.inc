@@ -4,7 +4,7 @@
         case Expr::Binary:ex(e->a.get());ex(e->b.get());{static const std::unordered_map<std::string,Op>m={{"+",Op::Add},{"-",Op::Sub},{"*",Op::Mul},{"/",Op::Div},{"%",Op::Mod},{"==",Op::Eq},{"!=",Op::Ne},{"<",Op::Lt},{"<=",Op::Le},{">",Op::Gt},{">=",Op::Ge},{"&&",Op::And},{"||",Op::Or},{"&",Op::BitAnd},{"|",Op::BitOr},{"^",Op::BitXor},{"<<",Op::Shl},{">>",Op::Shr}};emit(m.at(e->text));}break;
         case Expr::ArrayLit:{for(auto&x:e->args)ex(x.get());emit(Op::MakeArray,(int)e->args.size());break;}
         case Expr::Index:ex(e->a.get());ex(e->b.get());emit(Op::Index);break;
-        case Expr::Call:{if(!e->a||e->a->k!=Expr::Var)throw Error("only named calls are supported");for(auto&x:e->args)ex(x.get());std::string n=e->a->text;static const std::unordered_map<std::string,int> bi={{"print",-1},{"clock",-2},{"len",-3},{"str",-4},{"int",-5},{"read_file",-6},{"write_file",-7},{"contains",-8},{"starts_with",-9},{"argc",-10},{"arg",-11},{"getenv",-12},{"file_exists",-13},{"mkdir",-14},{"remove_file",-15},{"path_join",-16},{"cwd",-17},{"http_get",-18},{"download",-19},{"substr",-20},{"char_at",-21},{"find",-22},{"trim",-23},{"upper",-24},{"lower",-25},{"replace",-26},{"manifest_value",-27},{"hash64",-28},{"push",-29},{"pop",-30},{"join",-31},{"split",-32},{"read_line",-33},{"sleep_ms",-34},{"time.sleep_ms",-34},{"platform",-35},{"arch",-36},{"temp_dir",-37},{"random_int",-38},{"list_dir",-39},{"file_size",-40},{"remove_tree",-41},{"jaup_pack",-42},{"jaup_extract",-43},{"jaup_manifest",-44},{"jaup_verify",-45},{"clock_ms",-46},{"time.now_ms",-46},{"clock_ns",-47},{"time.now_ns",-47},{"json_valid",-48},{"json_get",-49},{"json_string",-50},{"json_int",-51},{"json_bool",-52},{"json_escape",-53},{"json_type",-54},{"json_has",-55}};auto b=bi.find(n);if(b!=bi.end())emit(Op::Call,b->second);else{auto it=fidx.find(n);if(it==fidx.end()&&n.find('.')==std::string::npos&&!current_ns.empty())it=fidx.find(current_ns+"."+n);if(it==fidx.end()){if(externs.count(n))throw Error("extern function is AOT/object-only: "+n);throw Error("unknown function: "+n);}emit(Op::Call,it->second);}break;}
+        case Expr::Call:{if(!e->a||e->a->k!=Expr::Var)throw Error("only named calls are supported");for(auto&x:e->args)ex(x.get());std::string n=e->a->text;static const std::unordered_map<std::string,int> bi={{"print",-1},{"clock",-2},{"len",-3},{"str",-4},{"int",-5},{"read_file",-6},{"write_file",-7},{"contains",-8},{"starts_with",-9},{"argc",-10},{"arg",-11},{"getenv",-12},{"file_exists",-13},{"mkdir",-14},{"remove_file",-15},{"path_join",-16},{"cwd",-17},{"http_get",-18},{"download",-19},{"substr",-20},{"char_at",-21},{"find",-22},{"trim",-23},{"upper",-24},{"lower",-25},{"replace",-26},{"manifest_value",-27},{"hash64",-28},{"push",-29},{"pop",-30},{"join",-31},{"split",-32},{"read_line",-33},{"sleep_ms",-34},{"time.sleep_ms",-34},{"platform",-35},{"arch",-36},{"temp_dir",-37},{"random_int",-38},{"list_dir",-39},{"file_size",-40},{"remove_tree",-41},{"jaup_pack",-42},{"jaup_extract",-43},{"jaup_manifest",-44},{"jaup_verify",-45},{"clock_ms",-46},{"time.now_ms",-46},{"clock_ns",-47},{"time.now_ns",-47},{"json_valid",-48},{"json_get",-49},{"json_string",-50},{"json_int",-51},{"json_bool",-52},{"json_escape",-53},{"json_type",-54},{"json_has",-55},{"dll_open",-56},{"dll_symbol",-57},{"dll_close",-58},{"dll_call0",-59},{"dll_call1",-60},{"dll_call2",-61},{"dll_call3",-62},{"dll_call4",-63},{"ffi_cstr",-64},{"ffi_release",-65},{"dll_error",-66}};auto b=bi.find(n);if(b!=bi.end())emit(Op::Call,b->second);else{auto it=fidx.find(n);if(it==fidx.end()&&n.find('.')==std::string::npos&&!current_ns.empty())it=fidx.find(current_ns+"."+n);if(it==fidx.end()){if(externs.count(n))throw Error("extern function is AOT/object-only: "+n);throw Error("unknown function: "+n);}emit(Op::Call,it->second);}break;}
     }}
     void st(Stmt*s){switch(s->k){
         case Stmt::ExprS:ex(s->expr.get());emit(Op::Pop);break;
@@ -49,7 +49,17 @@ static Program load(const fs::path&fn){std::ifstream i(fn,std::ios::binary);if(!
 
 class VM {
     Program p; std::vector<Value> globals,stack; struct Frame{int fn;size_t ip;std::vector<Value>locals;};std::vector<Frame> frames; bool trace=false;
+    std::unordered_set<int64_t> ffi_modules;
+    std::unordered_map<int64_t,std::shared_ptr<std::string>> ffi_strings;
+    std::string ffi_error;
     Value pop(){if(stack.empty())throw Error("VM stack underflow");auto v=std::move(stack.back());stack.pop_back();return v;}
+    static void close_module_handle(int64_t raw){if(!raw)return;
+#ifdef _WIN32
+        FreeLibrary(reinterpret_cast<HMODULE>(static_cast<uintptr_t>(raw)));
+#else
+        dlclose(reinterpret_cast<void*>(static_cast<uintptr_t>(raw)));
+#endif
+    }
     Value builtin(int id){
         if(id==-1){auto v=pop();std::cout<<v.str()<<"\n";return Value();}
         if(id==-2){auto n=std::chrono::steady_clock::now().time_since_epoch();return std::chrono::duration<double>(n).count();}
@@ -114,11 +124,39 @@ class VM {
         if(id==-53)return json_escape_impl(pop().str());
         if(id==-54){auto path=pop().str(),text=pop().str();auto root=JsonParser(text).parse();auto v=json_path(root,path);if(!v)return std::string("missing");static const char*names[]={"null","bool","number","string","array","object"};return std::string(names[(int)v->kind]);}
         if(id==-55){auto path=pop().str(),text=pop().str();auto root=JsonParser(text).parse();return json_path(root,path)!=nullptr;}
+        if(id==-56){
+            auto path=pop().str();ffi_error.clear();
+#ifdef _WIN32
+            HMODULE h=LoadLibraryA(path.c_str());if(!h){ffi_error="LoadLibrary failed (win32="+std::to_string((unsigned long)GetLastError())+")";return (int64_t)0;}
+            int64_t raw=(int64_t)(uintptr_t)h;
+#else
+            dlerror();void* h=dlopen(path.c_str(),RTLD_NOW|RTLD_LOCAL);if(!h){const char*e=dlerror();ffi_error=e?e:"dlopen failed";return (int64_t)0;}int64_t raw=(int64_t)(uintptr_t)h;
+#endif
+            ffi_modules.insert(raw);return raw;
+        }
+        if(id==-57){
+            auto name=pop().str();auto raw=as_int(pop());ffi_error.clear();if(!raw){ffi_error="dll_symbol received null module handle";return (int64_t)0;}
+#ifdef _WIN32
+            auto p=GetProcAddress(reinterpret_cast<HMODULE>((uintptr_t)raw),name.c_str());if(!p){ffi_error="GetProcAddress failed for "+name+" (win32="+std::to_string((unsigned long)GetLastError())+")";return (int64_t)0;}return (int64_t)(uintptr_t)p;
+#else
+            dlerror();void*p=dlsym(reinterpret_cast<void*>((uintptr_t)raw),name.c_str());const char*e=dlerror();if(e){ffi_error=e;return (int64_t)0;}return (int64_t)(uintptr_t)p;
+#endif
+        }
+        if(id==-58){auto raw=as_int(pop());if(!raw)return false;auto it=ffi_modules.find(raw);if(it==ffi_modules.end()){ffi_error="dll_close received an unknown module handle";return false;}close_module_handle(raw);ffi_modules.erase(it);return true;}
+        if(id==-59){auto fn=as_int(pop());if(!fn)throw Error("dll_call0 received null function pointer");using F=std::intptr_t(*)();return (int64_t)reinterpret_cast<F>((uintptr_t)fn)();}
+        if(id==-60){auto a=as_int(pop()),fn=as_int(pop());if(!fn)throw Error("dll_call1 received null function pointer");using F=std::intptr_t(*)(std::intptr_t);return (int64_t)reinterpret_cast<F>((uintptr_t)fn)((std::intptr_t)a);}
+        if(id==-61){auto b=as_int(pop()),a=as_int(pop()),fn=as_int(pop());if(!fn)throw Error("dll_call2 received null function pointer");using F=std::intptr_t(*)(std::intptr_t,std::intptr_t);return (int64_t)reinterpret_cast<F>((uintptr_t)fn)((std::intptr_t)a,(std::intptr_t)b);}
+        if(id==-62){auto c=as_int(pop()),b=as_int(pop()),a=as_int(pop()),fn=as_int(pop());if(!fn)throw Error("dll_call3 received null function pointer");using F=std::intptr_t(*)(std::intptr_t,std::intptr_t,std::intptr_t);return (int64_t)reinterpret_cast<F>((uintptr_t)fn)((std::intptr_t)a,(std::intptr_t)b,(std::intptr_t)c);}
+        if(id==-63){auto d=as_int(pop()),c=as_int(pop()),b=as_int(pop()),a=as_int(pop()),fn=as_int(pop());if(!fn)throw Error("dll_call4 received null function pointer");using F=std::intptr_t(*)(std::intptr_t,std::intptr_t,std::intptr_t,std::intptr_t);return (int64_t)reinterpret_cast<F>((uintptr_t)fn)((std::intptr_t)a,(std::intptr_t)b,(std::intptr_t)c,(std::intptr_t)d);}
+        if(id==-64){auto text=pop().str();auto hold=std::make_shared<std::string>(std::move(text));int64_t raw=(int64_t)(uintptr_t)hold->c_str();ffi_strings[raw]=std::move(hold);return raw;}
+        if(id==-65){auto raw=as_int(pop());return ffi_strings.erase(raw)>0;}
+        if(id==-66)return ffi_error;
         throw Error("bad builtin");
     }
     static bool eq(const Value&a,const Value&b){if(is_num(a)&&is_num(b))return as_double(a)==as_double(b);return a.str()==b.str();}
 public:
     explicit VM(Program x,bool t=false):p(std::move(x)),globals(p.globals.size()),trace(t){}
+    ~VM(){for(auto raw:ffi_modules)close_module_handle(raw);ffi_modules.clear();ffi_strings.clear();}
     Value run(){frames.push_back({0,0,std::vector<Value>(std::max(0,p.funcs[0].locals))});while(!frames.empty()){auto&fr=frames.back();auto&fn=p.funcs[fr.fn];if(fr.ip>=fn.code.size())throw Error("instruction pointer out of range");size_t trace_ip=fr.ip;auto in=fn.code[fr.ip++];if(trace)std::cerr<<"[jau:trace] fn="<<fn.name<<" ip="<<trace_ip<<" op="<<(int)in.op<<" arg="<<in.a<<" stack="<<stack.size()<<" frames="<<frames.size()<<"\n";switch(in.op){
         case Op::Const:stack.push_back(p.consts.at(in.a));break;case Op::Null:stack.emplace_back();break;case Op::LoadG:stack.push_back(globals.at(in.a));break;case Op::StoreG:globals.at(in.a)=stack.back();break;case Op::LoadL:stack.push_back(fr.locals.at(in.a));break;case Op::StoreL:fr.locals.at(in.a)=stack.back();break;case Op::Pop:pop();break;
         case Op::Add:{auto b=pop(),a=pop();stack.push_back(addv(a,b));break;}case Op::Sub:{auto b=pop(),a=pop();stack.push_back(subv(a,b));break;}case Op::Mul:{auto b=pop(),a=pop();stack.push_back(mulv(a,b));break;}case Op::Div:{auto b=pop(),a=pop();double d=as_double(b);if(d==0)throw Error("division by zero");stack.push_back(as_double(a)/d);break;}case Op::Mod:{auto b=pop(),a=pop();auto d=as_int(b);if(!d)throw Error("division by zero");stack.push_back(as_int(a)%d);break;}case Op::Neg:{auto a=pop();stack.push_back(std::holds_alternative<int64_t>(a.data)?Value(-std::get<int64_t>(a.data)):Value(-as_double(a)));break;}case Op::Not:{auto a=pop();stack.push_back(!a.truthy());break;}case Op::BitNot:{auto a=pop();stack.push_back((int64_t)~as_int(a));break;}

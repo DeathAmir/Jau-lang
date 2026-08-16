@@ -1,0 +1,64 @@
+name: static-multi-windows
+
+on:
+  pull_request:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  static-library:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            target: windows-x86_64
+            build: build-static-x64
+          - arch: Win32
+            target: windows-x86
+            build: build-static-x86
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Jau
+        shell: pwsh
+        run: |
+          cmake -S . -B ${{ matrix.build }} -A ${{ matrix.arch }} -DJAU_ENABLE_ASM_FASTOPS=OFF
+          cmake --build ${{ matrix.build }} --config Release --parallel 2
+      - name: Build native object fixtures
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force native-objects | Out-Null
+          $left = (Resolve-Path .\tests\multi_native_left.cpp).Path.Replace("\","/")
+          $right = (Resolve-Path .\tests\multi_native_right.cpp).Path.Replace("\","/")
+          Set-Content -Encoding utf8 native-objects\CMakeLists.txt 'cmake_minimum_required(VERSION 3.16)'
+          Add-Content -Encoding utf8 native-objects\CMakeLists.txt 'project(JauStaticObjects LANGUAGES CXX)'
+          Add-Content -Encoding utf8 native-objects\CMakeLists.txt "add_library(left OBJECT `"$left`")"
+          Add-Content -Encoding utf8 native-objects\CMakeLists.txt "add_library(right OBJECT `"$right`")"
+          cmake -S native-objects -B native-objects\build -A ${{ matrix.arch }}
+          cmake --build native-objects\build --config Release --parallel 2
+      - name: Build and consume multi-object Jau static library
+        shell: pwsh
+        run: |
+          $jauc = (Resolve-Path .\${{ matrix.build }}\Release\jauc.exe).Path
+          $left = (Get-ChildItem -Recurse native-objects\build -Filter 'multi_native_left*.obj' | Select-Object -First 1).FullName
+          $right = (Get-ChildItem -Recurse native-objects\build -Filter 'multi_native_right*.obj' | Select-Object -First 1).FullName
+          if (!$left -or !$right) { throw 'native object fixtures were not produced' }
+          & $jauc static tests\multi_library.jau -o multi-static.lib --target ${{ matrix.target }} --link $left --link $right
+          if ($LASTEXITCODE -ne 0 -or !(Test-Path .\multi-static.lib)) { throw 'multi-static.lib was not created successfully' }
+
+          New-Item -ItemType Directory -Force static-client | Out-Null
+          Set-Content -Encoding utf8 static-client\main.cpp '#include <cstdint>'
+          Add-Content -Encoding utf8 static-client\main.cpp 'extern "C" std::intptr_t jau_fn_calculate(std::intptr_t, std::intptr_t);'
+          Add-Content -Encoding utf8 static-client\main.cpp 'int main(){ return jau_fn_calculate(20,22)==42 ? 0 : 1; }'
+          $lib = (Resolve-Path .\multi-static.lib).Path.Replace("\","/")
+          Set-Content -Encoding utf8 static-client\CMakeLists.txt 'cmake_minimum_required(VERSION 3.16)'
+          Add-Content -Encoding utf8 static-client\CMakeLists.txt 'project(JauStaticClient LANGUAGES CXX)'
+          Add-Content -Encoding utf8 static-client\CMakeLists.txt 'add_executable(static_client main.cpp)'
+          Add-Content -Encoding utf8 static-client\CMakeLists.txt "target_link_libraries(static_client PRIVATE `"$lib`")"
+          cmake -S static-client -B static-client\build -A ${{ matrix.arch }}
+          cmake --build static-client\build --config Release --parallel 2
+          & .\static-client\build\Release\static_client.exe
+          if ($LASTEXITCODE -ne 0) { throw "static library client failed with $LASTEXITCODE" }

@@ -1,0 +1,11 @@
+extern func native_left(value);
+extern func native_right(value);
+
+func calculate(a, b) {
+    return native_left(a) + native_right(b);
+}
+
+func main() {
+    print(calculate(20, 22));
+    return 0;
+}

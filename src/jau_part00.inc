@@ -23,11 +23,20 @@
 #include <unordered_set>
 #include <variant>
 #include <system_error>
-#ifndef _WIN32
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
 #include <unistd.h>
+#include <dlfcn.h>
 #endif
 
 namespace fs = std::filesystem;

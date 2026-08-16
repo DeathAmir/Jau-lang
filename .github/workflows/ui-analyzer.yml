@@ -1,0 +1,79 @@
+name: ui-analyzer
+
+on:
+  pull_request:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  linux-x64:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install JGui dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev
+      - name: Build JGui and Jau Analyzer
+        run: |
+          cmake -S examples/jau_analyzer -B analyzer-build -DCMAKE_BUILD_TYPE=Release
+          cmake --build analyzer-build -j2
+          test -s packages/JGui/native/bin/linux-x86_64/libJGui.so
+          test -x analyzer-build/jau-analyzer
+      - name: Stage Linux analyzer
+        run: |
+          mkdir -p dist
+          cp analyzer-build/jau-analyzer dist/
+          cp packages/JGui/native/bin/linux-x86_64/libJGui.so dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jau-analyzer-linux-x64
+          path: dist
+
+  windows-x64:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build JGui and Jau Analyzer x64
+        shell: pwsh
+        run: |
+          cmake -S examples/jau_analyzer -B analyzer-build -A x64
+          cmake --build analyzer-build --config Release --parallel 2
+          if (!(Test-Path packages\JGui\native\bin\windows-x86_64\JGui.dll)) { throw "JGui x64 DLL missing" }
+          if (!(Test-Path analyzer-build\Release\jau-analyzer.exe)) { throw "Jau Analyzer x64 missing" }
+      - name: Stage Windows x64 analyzer
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item analyzer-build\Release\jau-analyzer.exe dist\
+          Copy-Item packages\JGui\native\bin\windows-x86_64\JGui.dll dist\
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jau-analyzer-windows-x64
+          path: dist
+
+  windows-x86:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build JGui and Jau Analyzer x86
+        shell: pwsh
+        run: |
+          cmake -S examples/jau_analyzer -B analyzer-build32 -A Win32
+          cmake --build analyzer-build32 --config Release --parallel 2
+          if (!(Test-Path packages\JGui\native\bin\windows-x86\JGui.dll)) { throw "JGui x86 DLL missing" }
+          if (!(Test-Path analyzer-build32\Release\jau-analyzer.exe)) { throw "Jau Analyzer x86 missing" }
+      - name: Stage Windows x86 analyzer
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist32 | Out-Null
+          Copy-Item analyzer-build32\Release\jau-analyzer.exe dist32\
+          Copy-Item packages\JGui\native\bin\windows-x86\JGui.dll dist32\
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jau-analyzer-windows-x86
+          path: dist32
