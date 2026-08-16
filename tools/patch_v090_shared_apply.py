@@ -34,14 +34,24 @@ if old not in src:
 src = src.replace(old,new,1)
 exec(compile(src, 'tools/patch_v090_shared2.py', 'exec'), {'__name__':'__main__'})
 
-# The shared patch intentionally emits GAS aliases. Preserve the escape
-# sequences inside the generated C++ string instead of letting Python turn them
-# into literal source newlines.
+# Preserve the GAS alias escape sequences inside the generated C++ string.
 p = Path('src/jau_part03.inc')
 s = p.read_text(encoding='utf-8')
 broken = 'if(pub!=target)f<<"\n.globl "<<pub<<"\n.set "<<pub<<","<<target<<"\n";}}'
 fixed = 'if(pub!=target)f<<"\\n.globl "<<pub<<"\\n.set "<<pub<<","<<target<<"\\n";}}'
 if broken not in s:
     raise SystemExit('shared export alias escape fix anchor not found')
+s = s.replace(broken,fixed,1)
+p.write_text(s,encoding='utf-8')
+
+# Python source construction in the patch intentionally describes a C++
+# diagnostic with \n. Convert the accidental literal source newline back to an
+# escaped newline before compiling jauc.
+p = Path('src/jauc_main.cpp')
+s = p.read_text(encoding='utf-8')
+broken = 'std::cerr<<"jauc: shared requires at least one --export name\n";return 2;'
+fixed = 'std::cerr<<"jauc: shared requires at least one --export name\\n";return 2;'
+if broken not in s:
+    raise SystemExit('jauc shared diagnostic escape fix anchor not found')
 s = s.replace(broken,fixed,1)
 p.write_text(s,encoding='utf-8')
