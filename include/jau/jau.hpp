@@ -9,6 +9,8 @@ struct CompileOptions {
     bool library_mode = false;
     std::vector<std::string> import_paths;
     std::vector<std::string> native_inputs;
+    std::vector<std::string> native_symbols;
+    bool debug = false;
 };
 struct Result {
     bool ok = false;

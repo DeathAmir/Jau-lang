@@ -1,0 +1,4 @@
+name="MathAlias"
+version="1.0.0"
+main="src/main.jau"
+source=".\aliaspkg\dist\MathAlias-1.0.0.jaux"

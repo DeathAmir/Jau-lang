@@ -1,0 +1,10 @@
+^D:\A\JAU-LANG\JAU-LANG\ALIASBUILD\CMAKEFILES\FD663773A25F3A0216DF84A5AE1F880A\GENERATE.STAMP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SD:/a/Jau-lang/Jau-lang/tests/native_alias -BD:/a/Jau-lang/Jau-lang/aliasbuild --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file D:/a/Jau-lang/Jau-lang/aliasbuild/MathAlias.slnx
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

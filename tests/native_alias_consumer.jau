@@ -1,0 +1,3 @@
+import "pkg:MathAlias"
+let answer = MathAlias.add[20,22];
+while (answer != 42) { }

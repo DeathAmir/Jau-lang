@@ -1,0 +1,5 @@
+name="MathAlias"
+version="1.0.0"
+main="src/main.jau"
+type="native"
+native_windows_x86_64="native/windows-x86_64/mathx.obj"

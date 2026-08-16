@@ -6,12 +6,24 @@ static Program compile_program(const std::string&input,const CompileOptions&o){a
 
 class AOT {
     std::string target; bool is64=false, win=false, library=false; int optimize=0,label=0; std::ostringstream o;
-    std::unordered_map<std::string,Stmt*> funcs; std::unordered_set<std::string> externs;
+    std::unordered_map<std::string,Stmt*> funcs; std::unordered_set<std::string> externs; std::vector<std::string> native_symbols;
     struct Ctx{std::unordered_map<std::string,int> locals,params;int next=0;std::string end;std::vector<std::string> breaks,continues;}; Ctx c;
     std::string L(){return ".L"+std::to_string(label++);} int word()const{return is64?8:4;}
     std::string clean(const std::string&n)const{std::string r;for(unsigned char ch:n)r+=(std::isalnum(ch)||ch=='_')?(char)ch:'_';return r;}
     std::string sym(const std::string&n)const{return "jau_fn_"+clean(n);}
-    std::string foreign_sym(const std::string&n)const{return clean(n);}
+    static std::string canonical_foreign(std::string n){
+        if(n.rfind("__imp_",0)==0)n=n.substr(6);else if(n.rfind("_imp__",0)==0)n=n.substr(6);
+        while(n.size()>1&&n[0]=='_')n.erase(n.begin());
+        auto at=n.find('@');if(at!=std::string::npos){bool digits=at+1<n.size();for(size_t i=at+1;i<n.size();++i)digits=digits&&std::isdigit((unsigned char)n[i]);if(digits)n=n.substr(0,at);}
+        return n;
+    }
+    std::string foreign_sym(const std::string&n)const{
+        std::string wanted=canonical_foreign(clean(n));
+        for(auto&actual:native_symbols)if(actual==clean(n))return actual;
+        std::string match;
+        for(auto&actual:native_symbols)if(canonical_foreign(actual)==wanted){if(!match.empty()&&match!=actual)return clean(n);match=actual;}
+        return match.empty()?clean(n):match;
+    }
     int slot(const std::string&n){auto it=c.locals.find(n);if(it!=c.locals.end())return it->second;int q=(++c.next)*word();c.locals[n]=q;return q;}
     void push(const std::string&r){o<<"  push "<<r<<"\n";} void pop(const std::string&r){o<<"  pop "<<r<<"\n";}
     void load_var(const std::string&n){
@@ -148,7 +160,7 @@ class AOT {
         return s;
     }
 public:
-    AOT(std::string t,bool lib=false,int opt=0):target(std::move(t)),library(lib),optimize(opt){
+    AOT(std::string t,bool lib=false,int opt=0,const std::vector<std::string>&ns={}):target(std::move(t)),library(lib),optimize(opt),native_symbols(ns){
         win=target.rfind("windows",0)==0;is64=target.find("x86_64")!=std::string::npos;
         if(target!="linux-x86_64"&&target!="linux-x86"&&target!="windows-x86_64"&&target!="windows-x86")throw Error("unknown target: "+target);
     }
@@ -167,9 +179,9 @@ public:
     }
 };
 Result compile_file(const std::string&input,const std::string&output,const CompileOptions&o){try{auto p=compile_program(input,o);save(p,output);return {true,"built "+output};}catch(const std::exception&e){return {false,e.what()};}}
-Result run_source(const std::string&input,const CompileOptions&o,const std::vector<std::string>&args){try{g_runtime_args=args;VM vm(compile_program(input,o));vm.run();return {true,""};}catch(const std::exception&e){return {false,e.what()};}}
+Result run_source(const std::string&input,const CompileOptions&o,const std::vector<std::string>&args){try{g_runtime_args=args;VM vm(compile_program(input,o),o.debug);vm.run();return {true,""};}catch(const std::exception&e){return {false,e.what()};}}
 Result run_bytecode(const std::string&input,const std::vector<std::string>&args){try{g_runtime_args=args;VM vm(load(input));vm.run();return {true,""};}catch(const std::exception&e){return {false,e.what()};}}
-Result emit_assembly(const std::string&input,const std::string&output,const std::string&target,const CompileOptions&o){try{auto ast=parse_file(input,o);AOT a(target,o.library_mode,o.optimize);write_text(output,a.gen(ast));return {true,"assembly emitted: "+output+" ("+target+", O"+std::to_string(o.optimize)+")"};}catch(const std::exception&e){return {false,e.what()};}}
+Result emit_assembly(const std::string&input,const std::string&output,const std::string&target,const CompileOptions&o){try{auto ast=parse_file(input,o);AOT a(target,o.library_mode,o.optimize,o.native_symbols);write_text(output,a.gen(ast));return {true,"assembly emitted: "+output+" ("+target+", O"+std::to_string(o.optimize)+")"};}catch(const std::exception&e){return {false,e.what()};}}
 Result native_build(const std::string&input,const std::string&output,const std::string&target,const CompileOptions&o){try{
     auto tmp=fs::temp_directory_path()/"jau_native.s";auto r=emit_assembly(input,tmp.string(),target,o);if(!r.ok)return r;
     bool cpp=false;for(auto&x:o.native_inputs){auto e=lower_copy(fs::path(x).extension().string());if(e==".cpp"||e==".cxx"||e==".cc"||e==".c++")cpp=true;}
@@ -197,5 +209,5 @@ Result run_embedded_executable(const std::string&exe,const std::vector<std::stri
     std::ifstream in(exe,std::ios::binary);if(!in)throw Error("cannot open executable");in.seekg(0,std::ios::end);auto end=in.tellg();if(end<(std::streamoff)16)throw Error("no embedded Jau payload");in.seekg(end-(std::streamoff)16);uint64_t n=0;char magic[8];in.read((char*)&n,8);in.read(magic,8);if(std::memcmp(magic,"JAUEXEC1",8))throw Error("no embedded Jau payload");if(n>(uint64_t)(end-(std::streamoff)16))throw Error("corrupt embedded payload");in.seekg(end-(std::streamoff)16-(std::streamoff)n);std::vector<char> data((size_t)n);in.read(data.data(),(std::streamsize)n);
     fs::path tmp=fs::temp_directory_path()/("jau_embedded_"+std::to_string(fnv1a64(exe))+".jbc");{std::ofstream o2(tmp,std::ios::binary);o2.write(data.data(),(std::streamsize)data.size());}auto rr=run_bytecode(tmp.string(),args);std::error_code ec;fs::remove(tmp,ec);return rr;
 }catch(const std::exception&e){return {false,e.what()};}}
-std::string version(){return "0.7.1";}
+std::string version(){return "0.8.0";}
 }

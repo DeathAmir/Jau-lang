@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="18.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="D:\a\Jau-lang\Jau-lang\tests\native_alias\mathx.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="D:\a\Jau-lang\Jau-lang\tests\native_alias\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{BD9C7308-F503-39FE-A6BA-7B5E8B5D6EBF}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

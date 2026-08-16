@@ -1,0 +1,2 @@
+extern func mx_add(a:int,b:int):int;
+namespace MathAlias { func add(a:int,b:int):int { return mx_add(a,b); } }

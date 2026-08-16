@@ -73,6 +73,15 @@ static std::vector<std::string> split_csv(const std::string& s){std::vector<std:
 static std::string native_key(std::string target){for(char&c:target)if(c=='-')c='_';return "native_"+target;}
 static std::string lower_copy_local(std::string x){for(char&c:x)c=(char)std::tolower((unsigned char)c);return x;}
 static std::string read_text(const fs::path&p){std::ifstream f(p,std::ios::binary);if(!f)return "";std::ostringstream s;s<<f.rdbuf();return s.str();}
+static uint16_t coff16(const std::string&b,size_t p){if(p+2>b.size())throw std::runtime_error("truncated COFF");return (uint16_t)((unsigned char)b[p]|((unsigned char)b[p+1]<<8));}
+static uint32_t coff32(const std::string&b,size_t p){if(p+4>b.size())throw std::runtime_error("truncated COFF");return (uint32_t)(unsigned char)b[p]|((uint32_t)(unsigned char)b[p+1]<<8)|((uint32_t)(unsigned char)b[p+2]<<16)|((uint32_t)(unsigned char)b[p+3]<<24);}
+static std::string coff_name8(const std::string&b,size_t p){size_t n=0;while(n<8&&p+n<b.size()&&b[p+n])++n;return b.substr(p,n);}
+static std::vector<std::string> coff_defined_symbols(const fs::path&p){
+    std::string b=read_text(p);std::vector<std::string> out;if(b.size()<20)return out;uint32_t sp=coff32(b,8),ns=coff32(b,12);size_t strbase=(size_t)sp+(size_t)ns*18u;if(sp==0||strbase>b.size())return out;
+    auto str_at=[&](uint32_t off){if(off<4||strbase+off>=b.size())return std::string();size_t q=strbase+off,e=q;while(e<b.size()&&b[e])++e;return b.substr(q,e-q);};
+    for(uint32_t i=0;i<ns;){size_t q=(size_t)sp+(size_t)i*18u;if(q+18>b.size())break;uint32_t z=coff32(b,q);std::string name=z==0?str_at(coff32(b,q+4)):coff_name8(b,q);int16_t sec=(int16_t)coff16(b,q+12);uint8_t storage=(uint8_t)b[q+16],aux=(uint8_t)b[q+17];if(sec>0&&storage==2&&!name.empty())out.push_back(name);i+=1u+aux;}
+    return out;
+}
 static void write_binary(const fs::path&p,const std::string&data){if(p.has_parent_path())fs::create_directories(p.parent_path());std::ofstream f(p,std::ios::binary|std::ios::trunc);if(!f)throw std::runtime_error("cannot create temporary native object");f.write(data.data(),(std::streamsize)data.size());}
 static void write_link_metadata(const fs::path& object,const std::string& target,const std::string& entry,int optimize,const std::string& kind){
     fs::path p=object.string()+".jmeta";std::ofstream f(p,std::ios::trunc);if(!f)throw std::runtime_error("cannot write linker metadata: "+p.string());
@@ -94,6 +103,7 @@ struct NativeCollector {
     std::unordered_set<std::string> packages;
     std::unordered_set<std::string> files;
     std::vector<std::string> objects;
+    std::vector<std::string> symbols;
     int serial=0;
     fs::path resolve_local(const fs::path& origin,const std::string& imp){std::vector<fs::path> cands{origin.parent_path()/imp};for(auto&i:options.import_paths)cands.push_back(fs::path(i)/imp);cands.push_back(jau_home_path()/"stdlib"/imp);cands.push_back(fs::current_path()/"stdlib"/imp);for(auto&c:cands)if(fs::exists(c))return c;return {};}
     void scan_text(const std::string& text,const fs::path& origin){std::regex re(R"(^\s*import\s+\"([^\"]+)\"\s*;?\s*$)");std::istringstream in(text);std::string line;while(std::getline(in,line)){std::smatch m;if(!std::regex_match(line,m,re))continue;std::string imp=m[1].str();if(imp.rfind("pkg:",0)==0)package(imp.substr(4));else{auto p=resolve_local(origin,imp);if(!p.empty())file(p);}}}
@@ -102,15 +112,17 @@ struct NativeCollector {
         auto slash=spec.find('/');std::string name=slash==std::string::npos?spec:spec.substr(0,slash),sub=slash==std::string::npos?"":spec.substr(slash+1);if(!packages.insert(name).second)return;
         fs::path archive=jau_home_path()/"packages"/name/"package.jaup";if(!fs::exists(archive))return;
         std::string mf=jau::package_manifest(archive.string());std::string type=lower_copy_local(manifest_value(mf,"type"));
-        if(type=="native"){
-            std::string members=manifest_value(mf,native_key(target));if(members.empty())members=manifest_value(mf,"native");
-            if(members.empty())throw std::runtime_error("native package "+name+" has no object for target "+target);
+        std::string members=manifest_value(mf,native_key(target));if(members.empty())members=manifest_value(mf,"native");
+        bool native_pkg=(type=="native"||!members.empty());
+        if(native_pkg){
+            if(members.empty())throw std::runtime_error("native package "+name+" has no object for target "+target+"; expected manifest key "+native_key(target));
             for(auto&member:split_csv(members)){
                 auto ext=lower_copy_local(fs::path(member).extension().string());
                 if(ext!=".obj"&&ext!=".o")throw std::runtime_error("native package "+name+" member is not an object file: "+member);
                 std::string bytes=jau::package_read_file(archive.string(),member);
                 fs::path p=temp/("pkg_"+std::to_string(serial++)+"_"+fs::path(member).filename().string());
                 write_binary(p,bytes);objects.push_back(p.string());
+                auto syms=coff_defined_symbols(p);symbols.insert(symbols.end(),syms.begin(),syms.end());
             }
         }
         for(auto&dep:split_csv(manifest_value(mf,"dependencies")))package(dep);
@@ -123,9 +135,18 @@ struct NativeCollector {
     }
 };
 
-static std::vector<std::string> collect_native_package_objects(const std::string& input,const std::string& target,const fs::path&temp,const jau::CompileOptions&opt){NativeCollector c{target,temp,opt};c.file(input);return c.objects;}
+static std::vector<std::string> collect_native_package_objects(const std::string& input,const std::string& target,const fs::path&temp,const jau::CompileOptions&opt,std::vector<std::string>*symbols=nullptr){NativeCollector c{target,temp,opt};c.file(input);if(symbols)*symbols=c.symbols;return c.objects;}
 static bool is_cpp_ext(const std::string&e){return e==".cpp"||e==".cxx"||e==".cc"||e==".c++";}
 static std::string lower_ext(fs::path p){auto e=p.extension().string();for(char&c:e)c=(char)std::tolower((unsigned char)c);return e;}
+static void append_unique(std::vector<std::string>&dst,const std::vector<std::string>&src){for(auto&s:src)if(std::find(dst.begin(),dst.end(),s)==dst.end())dst.push_back(s);}
+static jau::Result emit_with_native_symbols(const std::string&input,const std::string&output,const std::string&target,jau::CompileOptions opt){
+    if(!is_windows_target(target))return jau::emit_assembly(input,output,target,opt);
+    fs::path tmp=fs::temp_directory_path()/("jau_symbols_"+std::to_string(std::hash<std::string>{}(input+target)));std::error_code ec;fs::remove_all(tmp,ec);fs::create_directories(tmp);
+    try{std::vector<std::string> syms;auto objs=collect_native_package_objects(input,target,tmp,opt,&syms);for(auto&x:opt.native_inputs){auto e=lower_ext(x);if(e==".obj"||e==".o")append_unique(syms,coff_defined_symbols(x));}append_unique(opt.native_symbols,syms);if(opt.debug){std::cerr<<"[jauc:resolve] native objects="<<objs.size()<<" symbols="<<syms.size()<<"\
+";for(auto&o:objs)std::cerr<<"[jauc:object] "<<o<<"\
+";for(auto&z:syms)std::cerr<<"[jauc:symbol] "<<z<<"\
+";}auto r=jau::emit_assembly(input,output,target,opt);fs::remove_all(tmp,ec);return r;}catch(const std::exception&e){fs::remove_all(tmp,ec);return {false,std::string("native symbol discovery failed: ")+e.what()};}
+}
 static bool compile_native_input(const std::string& src,const std::string& target,const fs::path& out){
     std::string e=lower_ext(src);bool cpp=is_cpp_ext(e);if(e!=".c"&&!cpp)return false;const char* env=std::getenv(cpp?"JAU_CXX":"JAU_CC");std::string cc=env?env:(cpp?"g++":"gcc");if(target=="windows-x86"&&!env)cc=cpp?"i686-w64-mingw32-g++":"i686-w64-mingw32-gcc";std::string cmd=quote(cc)+" -c -O2 -ffunction-sections -fdata-sections ";if(cpp)cmd+="-fno-exceptions -fno-rtti ";cmd+=quote(src)+" -o "+quote(out.string());return std::system(cmd.c_str())==0;
 }
@@ -146,18 +167,28 @@ static jau::Result windows_native_build(const char* argv0,const std::string&inpu
 #endif
         if(!fs::exists(assembler))return {false,"internal assembler not found: "+assembler.string()};if(!fs::exists(linker))return {false,"internal PE linker not found: "+linker.string()};
         fs::path tmp=fs::temp_directory_path()/("jau_native_"+std::to_string(std::hash<std::string>{}(input+output+target)));std::error_code ec;fs::remove_all(tmp,ec);fs::create_directories(tmp);
-        fs::path asmp=tmp/"app.s",obj=tmp/"app.obj";opt.library_mode=false;auto r=jau::emit_assembly(input,asmp.string(),target,opt);if(!r.ok){fs::remove_all(tmp,ec);return r;}
-        if(run_process(assembler,{asmp.string(),"-o",obj.string(),"--target",target,"--object"})!=0){fs::remove_all(tmp,ec);return {false,"internal jauas object build failed"};}
-        std::vector<std::string> objs{obj.string()};auto pkg=collect_native_package_objects(input,target,tmp,opt);objs.insert(objs.end(),pkg.begin(),pkg.end());int serial=0;
+        std::vector<std::string> discovered;auto pkg=collect_native_package_objects(input,target,tmp,opt,&discovered);for(auto&x:opt.native_inputs){auto e=lower_ext(x);if(e==".obj"||e==".o")append_unique(discovered,coff_defined_symbols(x));}append_unique(opt.native_symbols,discovered);
+        if(opt.debug){std::cerr<<"[jauc:resolve] target="<<target<<" package_objects="<<pkg.size()<<" native_symbols="<<discovered.size()<<"\n";for(auto&p:pkg)std::cerr<<"[jauc:object] "<<p<<"\n";for(auto&z:discovered)std::cerr<<"[jauc:symbol] "<<z<<"\n";}
+        fs::path asmp=tmp/"app.s",obj=tmp/"app.obj";opt.library_mode=false;auto r=jau::emit_assembly(input,asmp.string(),target,opt);if(!r.ok){fs::remove_all(tmp,ec);return {false,"AOT stage: "+r.message};}
+        if(run_process(assembler,{asmp.string(),"-o",obj.string(),"--target",target,"--object"})!=0){fs::remove_all(tmp,ec);return {false,"assembler stage: internal jauas object build failed"};}
+        std::vector<std::string> objs{obj.string()};objs.insert(objs.end(),pkg.begin(),pkg.end());int serial=0;
         for(auto&x:opt.native_inputs){auto e=lower_ext(x);if(e==".obj"||e==".o")objs.push_back(x);else if(e==".c"||is_cpp_ext(e)){fs::path p=tmp/("link_"+std::to_string(serial++)+".obj");if(!compile_native_input(x,target,p)){fs::remove_all(tmp,ec);return {false,"failed to compile native C/C++ input: "+x+" (set JAU_CC/JAU_CXX if needed)"};}objs.push_back(p.string());}else{fs::remove_all(tmp,ec);return {false,"unsupported Windows native input: "+x+" (use .c/.cpp/.obj)"};}}
-        if(fs::path(output).extension()!=".exe")output+=".exe";std::vector<std::string> args=objs;args.push_back("-o");args.push_back(output);args.push_back("--target");args.push_back(target);args.push_back("--entry");args.push_back("main");int rc=run_process(linker,args);fs::remove_all(tmp,ec);if(rc!=0)return {false,"internal jauld PE link failed"};return {true,"native executable built without external linker: "+output};
+        if(fs::path(output).extension()!=".exe")output+=".exe";std::vector<std::string> args=objs;args.push_back("-o");args.push_back(output);args.push_back("--target");args.push_back(target);args.push_back("--entry");args.push_back("main");int rc=run_process(linker,args);fs::remove_all(tmp,ec);if(rc!=0)return {false,"link stage: internal jauld PE link failed (rerun with --debug to list package objects/symbols)"};return {true,"native executable built without external linker: "+output};
     }catch(const std::exception&e){return {false,e.what()};}
 }
 
+static void print_diagnostic(const std::string&input,const std::string&stage,const std::string&message){
+    std::cerr<<"jauc["<<stage<<"]: "<<message<<"\
+";std::smatch m;std::regex re("(?:at |line )line? ?([0-9]+)|line ([0-9]+)");if(std::regex_search(message,m,re)){std::string n=m[1].matched?m[1].str():m[2].str();try{int ln=std::stoi(n);std::ifstream f(input);std::string line;for(int i=1;i<=ln&&std::getline(f,line);++i)if(i==ln){std::cerr<<"  --> "<<input<<":"<<ln<<"\
+  "<<ln<<" | "<<line<<"\
+";break;}}catch(...){}}
+}
 static void help() {
     std::cout << "Jau compiler " << jau::version() << "\nusage:\n"
               << "  jauc build <file.jau> [-o out.jbc] [-O0|-O1|-O2|-O3]\n"
               << "  jauc run <file.jau>\n"
+              << "  jauc debug <file.jau> [-- args...]\n"
+              << "  jauc check <file.jau> [--target <target>]\n"
               << "  jauc asm <file.jau> -o out.s --target <linux-x86_64|linux-x86|windows-x86_64|windows-x86> [--library]\n"
               << "  jauc obj <file.jau> -o out.o|out.obj --target <target>\n"
               << "  jauc native <file.jau> -o program --target <target> [--link file.c|file.cpp|file.obj] [-O0..-O3]\n"
@@ -169,19 +200,21 @@ static void help() {
               << "AOT interoperability: extern func c_function(a, b); Jau exports jau_fn_<name>.\n";
 }
 
-int main(int argc, char** argv) {
+static int jauc_main_impl(int argc, char** argv) {
     if (argc < 2) { help(); return 0; }
     std::string cmd = argv[1];
     if (cmd == "--version" || cmd == "version") { std::cout << jau::version() << "\n"; return 0; }
     if (argc < 3) { help(); return 2; }
     std::string input = argv[2], output, target, runtime; std::vector<std::string> runargs; jau::CompileOptions opt; bool optimize_set=false;
-    for (int i = 3; i < argc; ++i) { std::string a = argv[i]; if (a == "--") { for (++i; i < argc; ++i) runargs.push_back(argv[i]); break; } if (a == "-o" && i + 1 < argc) output = argv[++i]; else if (a == "--target" && i + 1 < argc) target = argv[++i]; else if (a == "--runtime" && i + 1 < argc) runtime = argv[++i]; else if (a == "--library") opt.library_mode = true; else if (a == "--link" && i + 1 < argc) opt.native_inputs.push_back(argv[++i]); else if (a == "-I" && i + 1 < argc) opt.import_paths.push_back(argv[++i]); else if (a.rfind("-O", 0) == 0 && a.size() == 3 && a[2]>='0'&&a[2]<='3') {opt.optimize = a[2] - '0';optimize_set=true;} }
+    for (int i = 3; i < argc; ++i) { std::string a = argv[i]; if (a == "--") { for (++i; i < argc; ++i) runargs.push_back(argv[i]); break; } if (a == "-o" && i + 1 < argc) output = argv[++i]; else if (a == "--target" && i + 1 < argc) target = argv[++i]; else if (a == "--runtime" && i + 1 < argc) runtime = argv[++i]; else if (a == "--library") opt.library_mode = true; else if (a == "--debug") opt.debug = true; else if (a == "--link" && i + 1 < argc) opt.native_inputs.push_back(argv[++i]); else if (a == "-I" && i + 1 < argc) opt.import_paths.push_back(argv[++i]); else if (a.rfind("-O", 0) == 0 && a.size() == 3 && a[2]>='0'&&a[2]<='3') {opt.optimize = a[2] - '0';optimize_set=true;} }
     if(cmd=="native"&&!optimize_set)opt.optimize=3;
     jau::Result r;
     if (cmd == "run") r = jau::run_source(input, opt, runargs);
+    else if (cmd == "debug") { opt.debug=true; r = jau::run_source(input,opt,runargs); }
+    else if (cmd == "check") { fs::path tmp=fs::temp_directory_path()/("jau_check_"+std::to_string(std::hash<std::string>{}(input+target))+(target.empty()?".jbc":".s")); if(target.empty())r=jau::compile_file(input,tmp.string(),opt);else r=emit_with_native_symbols(input,tmp.string(),target,opt);std::error_code ec;fs::remove(tmp,ec);if(r.ok)r={true,"check passed: "+input}; }
     else if (cmd == "build") { if (output.empty()) output = input.substr(0, input.find_last_of('.')) + ".jbc"; r = jau::compile_file(input, output, opt); }
-    else if (cmd == "asm") { if (output.empty()) output = "out.s"; if (target.empty()) target = "linux-x86_64"; r = jau::emit_assembly(input, output, target, opt); }
-    else if (cmd == "obj") { if (target.empty()) target = "linux-x86_64"; if (output.empty()) output = is_windows_target(target) ? "out.obj" : "out.o"; opt.library_mode = true; auto temp = fs::temp_directory_path() / ("jau_obj_" + std::to_string(std::hash<std::string>{}(input + output)) + ".s"); r = jau::emit_assembly(input, temp.string(), target, opt); if (r.ok) { fs::path self = current_executable_path(argv[0]); fs::path assembler = self.parent_path() /
+    else if (cmd == "asm") { if (output.empty()) output = "out.s"; if (target.empty()) target = "linux-x86_64"; r = emit_with_native_symbols(input, output, target, opt); }
+    else if (cmd == "obj") { if (target.empty()) target = "linux-x86_64"; if (output.empty()) output = is_windows_target(target) ? "out.obj" : "out.o"; opt.library_mode = true; auto temp = fs::temp_directory_path() / ("jau_obj_" + std::to_string(std::hash<std::string>{}(input + output)) + ".s"); r = emit_with_native_symbols(input, temp.string(), target, opt); if (r.ok) { fs::path self = current_executable_path(argv[0]); fs::path assembler = self.parent_path() /
 #ifdef _WIN32
             "jauas.exe";
 #else
@@ -197,5 +230,7 @@ int main(int argc, char** argv) {
 #endif
         ).string(); } r = jau::bundle_executable(input, output, runtime, opt); }
     else { help(); return 2; }
-    if (!r.ok) { std::cerr << "jauc: " << r.message << "\n"; return 1; } if (!r.message.empty()) std::cout << r.message << "\n"; return 0;
+    if (!r.ok) { print_diagnostic(input,cmd,r.message); return 1; } if (!r.message.empty()) std::cout << r.message << "\n"; return 0;
 }
+
+int main(int argc,char**argv){try{return jauc_main_impl(argc,argv);}catch(const std::exception&e){std::cerr<<"jauc[fatal]: "<<e.what()<<"\n";return 1;}catch(...){std::cerr<<"jauc[fatal]: unknown internal error\n";return 1;}}

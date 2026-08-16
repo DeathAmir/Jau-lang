@@ -33,7 +33,7 @@ static size_t group_align(int g){return g==0?16u:8u;}
 struct ImportDesc {std::string exact,canonical,dll;bool indirect=false;uint32_t thunk_off=0,iat_off=0,hint_off=0;};
 static std::string undecorate(std::string n){
     if(n.rfind("__imp_",0)==0)n=n.substr(6);else if(n.rfind("_imp__",0)==0)n=n.substr(6);
-    if(!n.empty()&&n[0]=='_')n.erase(n.begin());
+    while(n.size()>1&&n[0]=='_')n.erase(n.begin());
     auto at=n.find('@');if(at!=std::string::npos){bool digits=at+1<n.size();for(size_t i=at+1;i<n.size();++i)digits=digits&&std::isdigit((unsigned char)n[i]);if(digits)n=n.substr(0,at);}
     return n;
 }

@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="18.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="D:\a\Jau-lang\Jau-lang\aliasbuild\CMakeFiles\fd663773a25f3a0216df84a5ae1f880a\generate.stamp.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{6F10ADC5-203E-394C-8FE1-4C59F09063A7}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

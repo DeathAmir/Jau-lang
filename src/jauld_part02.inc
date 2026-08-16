@@ -11,6 +11,7 @@ static uint32_t resolve_symbol(LinkState&st,size_t oi,uint32_t si){
     if(s.section>0)return symbol_rva(st,oi,s);
     if(s.section==-1)return s.value;
     auto it=st.globals.find(s.name);if(it!=st.globals.end())return symbol_rva(st,it->second.obj,st.objs[it->second.obj].symbols[it->second.sym]);
+    {std::string wanted=undecorate(s.name);DefRef*match=nullptr;std::string matched_name;for(auto&g:st.globals)if(undecorate(g.first)==wanted){if(match&&matched_name!=g.first)throw std::runtime_error("ambiguous decorated external symbol: "+s.name+" matches "+matched_name+" and "+g.first);match=&g.second;matched_name=g.first;}if(match)return symbol_rva(st,match->obj,st.objs[match->obj].symbols[match->sym]);}
     if(!st.x64){
         std::string alt=s.name;
         if(!alt.empty()&&alt[0]=='_')alt.erase(0,1);else alt="_"+alt;
@@ -24,7 +25,7 @@ static uint32_t resolve_symbol(LinkState&st,size_t oi,uint32_t si){
     }
     auto ii=st.import_target.find(s.name);if(ii!=st.import_target.end())return ii->second;
     auto ia=st.iat_target.find(s.name);if(ia!=st.iat_target.end())return ia->second;
-    throw std::runtime_error("unresolved external symbol: "+s.name);
+    std::string avail;int shown=0;for(auto&g:st.globals){if(shown++>=12)break;if(!avail.empty())avail+=", ";avail+=g.first;}throw std::runtime_error("unresolved external symbol: "+s.name+(avail.empty()?std::string(""):std::string("; defined externals include: ")+avail)+". For C++ extensions export ABI functions with extern \"C\" or use --debug in jauc to inspect package symbols");
 }
 
 static void collect_imports(LinkState&st){
