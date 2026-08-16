@@ -19,6 +19,7 @@ jobs:
           python tools/patch_v081.py
           python tools/patch_v081_aliasfix.py
           python tools/patch_v081_jauas.py
+          python tools/patch_v081_jauas_order.py
       - name: Build Jau x64
         shell: pwsh
         run: |
@@ -34,9 +35,11 @@ jobs:
           $ns=@(& .\build\Release\jauc.exe run tests\v081_namespace.jau)
           if(($ns -join ',') -ne '42'){ throw "namespace VM mismatch: $ns" }
           & .\build\Release\jauc.exe native tests\v081_syntax.jau -o v081-syntax.exe --target windows-x86_64 -O3
+          if($LASTEXITCODE -ne 0){ throw 'syntax native compile failed' }
           $na=@(& .\v081-syntax.exe)
           if(($na -join ',') -ne '10,157,-1'){ throw "syntax AOT mismatch: $na" }
           & .\build\Release\jauc.exe native tests\v081_namespace.jau -o v081-ns.exe --target windows-x86_64 -O3
+          if($LASTEXITCODE -ne 0){ throw 'namespace native compile failed' }
           $nn=@(& .\v081-ns.exe)
           if(($nn -join ',') -ne '42'){ throw "namespace AOT mismatch: $nn" }
       - name: Build real MathX C++ object
@@ -71,6 +74,7 @@ jobs:
           if(!(Select-String mathx-debug.txt -Pattern '\[jauc:symbol\] mx_add' -Quiet)){ Get-Content mathx-debug.txt; throw 'mx_add not discovered from COFF' }
           if(!(Select-String mathx-consumer.s -Pattern 'call mx_add' -Quiet)){ Get-Content mathx-consumer.s; throw 'AOT did not emit call mx_add' }
           & $jauc native tests\native_mathx_consumer.jau -o mathx-consumer.exe --target windows-x86_64 --debug
+          if($LASTEXITCODE -ne 0){ throw 'MathX native compile failed' }
           $out=@(& .\mathx-consumer.exe)
           if(($out -join ',') -ne '42,42,1024'){ throw "MathX native mismatch: $out" }
       - name: Existing regression suite
@@ -79,7 +83,7 @@ jobs:
       - name: Commit validated 0.8.1
         shell: pwsh
         run: |
-          git rm tools/patch_v081.py tools/patch_v081_aliasfix.py tools/patch_v081_jauas.py .github/workflows/v081-land.yml
+          git rm tools/patch_v081.py tools/patch_v081_aliasfix.py tools/patch_v081_jauas.py tools/patch_v081_jauas_order.py .github/workflows/v081-land.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add CMakeLists.txt src tests docs
