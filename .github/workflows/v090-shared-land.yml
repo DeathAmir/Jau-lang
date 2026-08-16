@@ -4,6 +4,7 @@ on:
     branches: [main]
     paths:
       - 'tools/patch_v090_shared2.py'
+      - 'tools/patch_v090_shared_apply.py'
       - '.github/workflows/v090-shared-land.yml'
 permissions:
   contents: write
@@ -16,7 +17,7 @@ jobs:
         with: {fetch-depth: 0}
       - name: Apply shared-library patch
         shell: pwsh
-        run: python tools/patch_v090_shared2.py
+        run: python tools/patch_v090_shared_apply.py
       - name: Build Jau x64
         shell: pwsh
         run: |
@@ -93,7 +94,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Apply shared-library patch
-        run: python3 tools/patch_v090_shared2.py
+        run: python3 tools/patch_v090_shared_apply.py
       - name: Build Jau Linux x64
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j2
       - name: Build and load Jau .so x64
@@ -135,7 +136,7 @@ jobs:
         run: |
           git apply shared.patch
           rm shared.patch
-          git rm tools/patch_v090_shared.py tools/patch_v090_shared2.py .github/workflows/v090-shared-land.yml
+          git rm tools/patch_v090_shared.py tools/patch_v090_shared2.py tools/patch_v090_shared_apply.py .github/workflows/v090-shared-land.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add CMakeLists.txt include src tests
