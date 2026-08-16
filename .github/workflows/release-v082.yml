@@ -1,0 +1,164 @@
+name: release-v082
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-v082.yml'
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and validate Windows x64
+        shell: pwsh
+        run: |
+          cmake -S . -B build -A x64 -DJAU_ENABLE_ASM_FASTOPS=OFF
+          cmake --build build --config Release --parallel 2
+          $jauc=(Resolve-Path .\build\Release\jauc.exe).Path
+          $v = & $jauc --version 2> copyright64.txt
+          if ($v -ne '0.8.2') { throw "unexpected x64 version: $v" }
+          if (!(Select-String -Path copyright64.txt -Pattern 'DeathAmir Jau @ DeathAmir 2026 (C)' -SimpleMatch -Quiet)) { throw 'x64 copyright banner missing' }
+          & $jauc native tests\v082_native_main.jau -o stable64.exe --target windows-x86_64 -O3
+          if ($LASTEXITCODE -ne 0) { throw 'x64 native main build failed' }
+          $main=@(& .\stable64.exe)
+          if (($main -join ',') -ne '30,200,32') { throw "x64 native main mismatch: $main" }
+          & $jauc native tests\v082_native_string.jau -o strings64.exe --target windows-x86_64
+          $str=@(& .\strings64.exe)
+          if (($str -join ',') -ne 'Add:,30,Multiply:,42') { throw "x64 string mismatch: $str" }
+          & $jauc native tests\v082_control_flow.jau -o flow64.exe --target windows-x86_64
+          $flow=@(& .\flow64.exe)
+          if (($flow -join ',') -ne '1') { throw "x64 control-flow mismatch: $flow" }
+          $vm=@(& $jauc run tests\v082_control_flow.jau -O3 2> vm64-copyright.txt)
+          if (($vm -join ',') -ne '1') { throw "x64 VM mismatch: $vm" }
+
+      - name: Build and validate Windows x86
+        shell: pwsh
+        run: |
+          cmake -S . -B build32 -A Win32 -DJAU_ENABLE_ASM_FASTOPS=OFF
+          cmake --build build32 --config Release --parallel 2
+          $jauc=(Resolve-Path .\build32\Release\jauc.exe).Path
+          $v = & $jauc --version 2> copyright32.txt
+          if ($v -ne '0.8.2') { throw "unexpected x86 version: $v" }
+          if (!(Select-String -Path copyright32.txt -Pattern 'DeathAmir Jau @ DeathAmir 2026 (C)' -SimpleMatch -Quiet)) { throw 'x86 copyright banner missing' }
+          & $jauc native tests\v082_native_main.jau -o stable32.exe --target windows-x86 -O3
+          if ($LASTEXITCODE -ne 0) { throw 'x86 native main build failed' }
+          $main=@(& .\stable32.exe)
+          if (($main -join ',') -ne '30,200,32') { throw "x86 native main mismatch: $main" }
+          & $jauc native tests\v082_native_string.jau -o strings32.exe --target windows-x86
+          $str=@(& .\strings32.exe)
+          if (($str -join ',') -ne 'Add:,30,Multiply:,42') { throw "x86 string mismatch: $str" }
+          & $jauc native tests\v082_control_flow.jau -o flow32.exe --target windows-x86
+          $flow=@(& .\flow32.exe)
+          if (($flow -join ',') -ne '1') { throw "x86 control-flow mismatch: $flow" }
+
+      - name: Build real MathX C++ objects
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force mathsrc | Out-Null
+          Copy-Item tests\native_mathx\mathx.cpp mathsrc\mathx.cpp
+          @'
+          cmake_minimum_required(VERSION 3.16)
+          project(MathX LANGUAGES CXX)
+          add_library(mathx OBJECT mathx.cpp)
+          '@ | Set-Content -Encoding utf8 mathsrc\CMakeLists.txt
+          cmake -S mathsrc -B mathbuild64 -A x64
+          cmake --build mathbuild64 --config Release --parallel 2
+          cmake -S mathsrc -B mathbuild32 -A Win32
+          cmake --build mathbuild32 --config Release --parallel 2
+          $o64=Get-ChildItem mathbuild64 -Recurse -Filter mathx.obj | Select-Object -First 1
+          $o32=Get-ChildItem mathbuild32 -Recurse -Filter mathx.obj | Select-Object -First 1
+          if(!$o64 -or !$o32){ throw 'MathX object build failed' }
+          New-Item -ItemType Directory -Force mathpkg\src,mathpkg\native\windows-x86_64,mathpkg\native\windows-x86 | Out-Null
+          Copy-Item tests\native_mathx\jau.pkg mathpkg\jau.pkg
+          Copy-Item tests\native_mathx\src\main.jau mathpkg\src\main.jau
+          Copy-Item $o64.FullName mathpkg\native\windows-x86_64\mathx.obj
+          Copy-Item $o32.FullName mathpkg\native\windows-x86\mathx.obj
+
+      - name: Validate MathX JAUX on x64 and x86
+        shell: pwsh
+        run: |
+          $pm=(Resolve-Path .\build\Release\jaupm.exe).Path
+          $j64=(Resolve-Path .\build\Release\jauc.exe).Path
+          $j32=(Resolve-Path .\build32\Release\jauc.exe).Path
+          Push-Location mathpkg
+          & $pm pack dist\MathX-1.0.0.jaux
+          & $pm verify dist\MathX-1.0.0.jaux
+          Pop-Location
+          $env:JAU_HOME="$PWD\release-mathx-home"
+          & $pm install .\mathpkg\dist\MathX-1.0.0.jaux
+          & $j64 asm tests\native_mathx_consumer.jau -o mathx64.s --target windows-x86_64 --debug 2> mathx64-debug.txt
+          if ($LASTEXITCODE -ne 0) { Get-Content mathx64-debug.txt; throw 'MathX x64 asm failed' }
+          if (!(Select-String -Path mathx64.s -Pattern 'call mx_add' -SimpleMatch -Quiet)) { throw 'MathX x64 missing native mx_add call' }
+          & $j64 native tests\native_mathx_consumer.jau -o mathx64.exe --target windows-x86_64 --debug
+          if ($LASTEXITCODE -ne 0) { throw 'MathX x64 native failed' }
+          $r64=@(& .\mathx64.exe)
+          if (($r64 -join ',') -ne '42,42,1024') { throw "MathX x64 mismatch: $r64" }
+          & $j32 asm tests\native_mathx_consumer.jau -o mathx32.s --target windows-x86 --debug 2> mathx32-debug.txt
+          if ($LASTEXITCODE -ne 0) { Get-Content mathx32-debug.txt; throw 'MathX x86 asm failed' }
+          & $j32 native tests\native_mathx_consumer.jau -o mathx32.exe --target windows-x86 --debug
+          if ($LASTEXITCODE -ne 0) { throw 'MathX x86 native failed' }
+          $r32=@(& .\mathx32.exe)
+          if (($r32 -join ',') -ne '42,42,1024') { throw "MathX x86 mismatch: $r32" }
+
+      - name: Diagnostic no-crash regression
+        shell: pwsh
+        run: |
+          $jauc=(Resolve-Path .\build\Release\jauc.exe).Path
+          Set-Content -Encoding utf8 invalid.jau 'func main( {'
+          $p=Start-Process -FilePath $jauc -ArgumentList @('check','invalid.jau') -RedirectStandardOutput invalid-out.txt -RedirectStandardError invalid-error.txt -Wait -PassThru
+          if ($p.ExitCode -eq 0) { throw 'invalid source unexpectedly succeeded' }
+          if ((Get-Item invalid-error.txt).Length -eq 0) { throw 'invalid source produced no diagnostic' }
+
+      - name: Stage Jau 0.8.2 archives
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release\x64\stdlib,release\x64\tools,release\x64\bootstrap,release\x64\packages,release\x64\docs | Out-Null
+          New-Item -ItemType Directory -Force release\x86\stdlib,release\x86\tools,release\x86\bootstrap,release\x86\packages,release\x86\docs | Out-Null
+          Copy-Item build\Release\jauc.exe,build\Release\jur.exe,build\Release\jauas.exe,build\Release\jauld.exe,build\Release\jaupm.exe,build\Release\jau-setup.exe release\x64\
+          Copy-Item build32\Release\jauc.exe,build32\Release\jur.exe,build32\Release\jauas.exe,build32\Release\jauld.exe,build32\Release\jaupm.exe,build32\Release\jau-setup.exe release\x86\
+          Copy-Item stdlib\* release\x64\stdlib\
+          Copy-Item stdlib\* release\x86\stdlib\
+          Copy-Item tools\jaupm.jau release\x64\tools\
+          Copy-Item tools\jaupm.jau release\x86\tools\
+          Copy-Item bootstrap\jauc_stage1.jau release\x64\bootstrap\
+          Copy-Item bootstrap\jauc_stage1.jau release\x86\bootstrap\
+          Copy-Item -Recurse packages\JTTP release\x64\packages\
+          Copy-Item -Recurse packages\JTTP release\x86\packages\
+          Copy-Item docs\*.md release\x64\docs\
+          Copy-Item docs\*.md release\x86\docs\
+          Copy-Item README.md release\x64\
+          Copy-Item README.md release\x86\
+          Compress-Archive -Path release\x64\* -DestinationPath Jau-0.8.2-windows-x64.zip -Force
+          Compress-Archive -Path release\x86\* -DestinationPath Jau-0.8.2-windows-x86.zip -Force
+          $x64=(Get-FileHash Jau-0.8.2-windows-x64.zip -Algorithm SHA256).Hash.ToLower()
+          $x86=(Get-FileHash Jau-0.8.2-windows-x86.zip -Algorithm SHA256).Hash.ToLower()
+          "Jau-0.8.2-windows-x64.zip  $x64`nJau-0.8.2-windows-x86.zip  $x86" | Set-Content SHA256SUMS.txt
+          Get-Content SHA256SUMS.txt
+
+      - name: Create GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          @'
+          Jau 0.8.2 is a correctness-first stability release.
+
+          Highlights:
+          - Fixes native executables that linked successfully but silently skipped user `func main()`.
+          - VM and native AOT now share the same automatic zero-argument `main()` entry semantics.
+          - VM and AOT optimization transformations are disabled in 0.8.2 until they receive transformation-specific semantic regression coverage. `-O` flags remain accepted for compatibility but use safe codegen.
+          - Native AOT supports integer printing and literal string printing such as `print("Add:")` on Windows x86/x64.
+          - Invalid source returns a diagnostic/non-zero status instead of an uncaught compiler crash in the tested error path.
+          - `.jaux` binary object separation, COFF symbol discovery, namespace C ABI wrappers and internal `jauld` linking remain validated with real MathX C++ objects on x64/x86.
+          - Jau CLI/runtime tools emit `DeathAmir Jau @ DeathAmir 2026 (C)` on stderr; generated native assembly embeds the same notice without corrupting normal program stdout.
+          - Added maintainer documentation with invariants future compiler changes must preserve.
+
+          Native AOT still intentionally rejects VM-only dynamic string/array operations that do not yet have a stable native runtime ABI; unsupported constructs should fail clearly rather than silently miscompile.
+
+          See `docs/V082.md` and `docs/MAINTAINERS.md`.
+          '@ | Set-Content release-notes.md
+          gh release create v0.8.2 Jau-0.8.2-windows-x64.zip Jau-0.8.2-windows-x86.zip SHA256SUMS.txt --target $env:GITHUB_SHA --title "Jau 0.8.2 - Native Stability & Safe AOT" --notes-file release-notes.md
