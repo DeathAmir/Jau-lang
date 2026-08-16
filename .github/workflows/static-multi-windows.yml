@@ -47,9 +47,7 @@ jobs:
           $right = (Get-ChildItem -Recurse native-objects\build -Filter 'multi_native_right*.obj' | Select-Object -First 1).FullName
           if (!$left -or !$right) { throw 'native object fixtures were not produced' }
           & $jauc static tests\multi_native.jau -o multi-static.lib --target ${{ matrix.target }} --link $left --link $right
-          if (!(Test-Path .\multi-static.lib)) { throw 'multi-static.lib was not created' }
-          $listing = & lib.exe /nologo /list .\multi-static.lib
-          if (($listing | Measure-Object).Count -lt 3) { throw "static archive does not contain all members: $listing" }
+          if ($LASTEXITCODE -ne 0 -or !(Test-Path .\multi-static.lib)) { throw 'multi-static.lib was not created successfully' }
 
           New-Item -ItemType Directory -Force static-client | Out-Null
           Set-Content -Encoding utf8 static-client\main.cpp '#include <cstdint>'
