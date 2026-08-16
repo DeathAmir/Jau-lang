@@ -46,7 +46,7 @@ jobs:
           $left = (Get-ChildItem -Recurse native-objects\build -Filter 'multi_native_left*.obj' | Select-Object -First 1).FullName
           $right = (Get-ChildItem -Recurse native-objects\build -Filter 'multi_native_right*.obj' | Select-Object -First 1).FullName
           if (!$left -or !$right) { throw 'native object fixtures were not produced' }
-          & $jauc static tests\multi_native.jau -o multi-static.lib --target ${{ matrix.target }} --link $left --link $right
+          & $jauc static tests\multi_library.jau -o multi-static.lib --target ${{ matrix.target }} --link $left --link $right
           if ($LASTEXITCODE -ne 0 -or !(Test-Path .\multi-static.lib)) { throw 'multi-static.lib was not created successfully' }
 
           New-Item -ItemType Directory -Force static-client | Out-Null
