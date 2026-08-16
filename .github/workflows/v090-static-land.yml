@@ -1,0 +1,133 @@
+name: v090-static-land
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/patch_v090_static.py'
+      - 'tools/patch_v090_static_apply.py'
+      - '.github/workflows/v090-static-land.yml'
+permissions:
+  contents: write
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - name: Apply static library patch
+        shell: pwsh
+        run: python tools/patch_v090_static_apply.py
+      - name: Build Jau x64
+        shell: pwsh
+        run: |
+          cmake -S . -B build -A x64 -DJAU_ENABLE_ASM_FASTOPS=OFF
+          cmake --build build --config Release --parallel 2
+      - name: Build and link Jau static LIB x64
+        shell: pwsh
+        run: |
+          & .\build\Release\jauc.exe static tests\v090_shared.jau -o jaucalc --target windows-x86_64
+          if($LASTEXITCODE -ne 0){throw 'x64 static library build failed'}
+          if(!(Test-Path .\jaucalc.lib)){throw 'jaucalc.lib missing'}
+          New-Item -ItemType Directory -Force staticclient | Out-Null
+          @'
+          #include <cstdint>
+          #include <cstdio>
+          extern "C" std::intptr_t jau_fn_add(std::intptr_t,std::intptr_t);
+          extern "C" std::intptr_t jau_fn_answer();
+          int main(){std::printf("%lld %lld\n",(long long)jau_fn_add(20,22),(long long)jau_fn_answer());return 0;}
+          '@ | Set-Content -Encoding utf8 staticclient\main.cpp
+          $lib=(Resolve-Path .\jaucalc.lib).Path.Replace('\','/')
+          @"
+          cmake_minimum_required(VERSION 3.16)
+          project(JauStaticClient LANGUAGES CXX)
+          add_executable(client main.cpp)
+          target_link_libraries(client PRIVATE "$lib")
+          "@ | Set-Content -Encoding utf8 staticclient\CMakeLists.txt
+          cmake -S staticclient -B staticclient\build -A x64
+          cmake --build staticclient\build --config Release --parallel 2
+          $out=& .\staticclient\build\Release\client.exe
+          if($out -ne '42 42'){throw "x64 static library mismatch: $out"}
+      - name: JauM static project x64
+        shell: pwsh
+        run: |
+          Copy-Item tests\v090_jaum_static.txt jaum-static.txt
+          & .\build\Release\jaum.exe build -f jaum-static.txt
+          if($LASTEXITCODE -ne 0){throw 'JauM static build failed'}
+          if(!(Test-Path .\build-jaum\jaucalc-windows-x86_64.lib)){throw 'JauM LIB missing'}
+      - name: Build and link Jau static LIB x86
+        shell: pwsh
+        run: |
+          cmake -S . -B build32 -A Win32 -DJAU_ENABLE_ASM_FASTOPS=OFF
+          cmake --build build32 --config Release --parallel 2
+          & .\build32\Release\jauc.exe static tests\v090_shared.jau -o jaucalc32 --target windows-x86
+          if($LASTEXITCODE -ne 0){throw 'x86 static library build failed'}
+          New-Item -ItemType Directory -Force staticclient32 | Out-Null
+          Copy-Item staticclient\main.cpp staticclient32\main.cpp
+          $lib=(Resolve-Path .\jaucalc32.lib).Path.Replace('\','/')
+          @"
+          cmake_minimum_required(VERSION 3.16)
+          project(JauStaticClient32 LANGUAGES CXX)
+          add_executable(client main.cpp)
+          target_link_libraries(client PRIVATE "$lib")
+          "@ | Set-Content -Encoding utf8 staticclient32\CMakeLists.txt
+          cmake -S staticclient32 -B staticclient32\build -A Win32
+          cmake --build staticclient32\build --config Release --parallel 2
+          $out=& .\staticclient32\build\Release\client.exe
+          if($out -ne '42 42'){throw "x86 static library mismatch: $out"}
+      - name: Existing Windows regressions
+        shell: pwsh
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Stage validated patch
+        shell: pwsh
+        run: |
+          git diff -- src tests > static.patch
+          if((Get-Item static.patch).Length -eq 0){throw 'static patch empty'}
+      - uses: actions/upload-artifact@v4
+        with: {name: v090-static-validated-patch, path: static.patch}
+
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply static library patch
+        run: python3 tools/patch_v090_static_apply.py
+      - name: Build Jau Linux x64
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j2
+      - name: Build and link Jau static archive x64
+        run: |
+          ./build/jauc static tests/v090_shared.jau -o libjaucalc --target linux-x86_64
+          test -f libjaucalc.a
+          cat > staticclient.c <<'EOF'
+          #include <stdint.h>
+          #include <stdio.h>
+          extern intptr_t jau_fn_add(intptr_t,intptr_t);
+          extern intptr_t jau_fn_answer(void);
+          int main(void){printf("%ld %ld\n",(long)jau_fn_add(20,22),(long)jau_fn_answer());return 0;}
+          EOF
+          cc staticclient.c ./libjaucalc.a -o staticclient
+          test "$(./staticclient)" = '42 42'
+          ar t libjaucalc.a | grep -q 'jau.o'
+      - name: Existing Linux regressions
+        run: ctest --test-dir build --output-on-failure
+
+  land:
+    needs: [windows, linux]
+    runs-on: ubuntu-latest
+    permissions: {contents: write}
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/download-artifact@v4
+        with: {name: v090-static-validated-patch, path: .}
+      - name: Land validated static support
+        run: |
+          git apply static.patch
+          rm static.patch
+          git rm tools/patch_v090_static.py tools/patch_v090_static_apply.py .github/workflows/v090-static-land.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src tests
+          git commit -m 'Jau 0.9: internal static LIB and archive output'
+          git push origin HEAD:main
