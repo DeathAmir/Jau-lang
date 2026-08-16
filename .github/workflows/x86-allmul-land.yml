@@ -1,0 +1,73 @@
+name: x86-allmul-land
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/x86-allmul-land.yml'
+permissions:
+  contents: write
+jobs:
+  validate:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply x86 runtime helper patch
+        run: python tools/patch_x86_allmul.py
+      - name: Build Jau x86
+        run: |
+          cmake -S . -B build32 -A Win32 -DJAU_ENABLE_ASM_FASTOPS=OFF
+          cmake --build build32 --config Release --parallel 2
+      - name: Build real long-long MathX object x86
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force mathsrc32 | Out-Null
+          Copy-Item tests\native_mathx\mathx.cpp mathsrc32\mathx.cpp
+          @'
+          cmake_minimum_required(VERSION 3.16)
+          project(MathX LANGUAGES CXX)
+          add_library(mathx OBJECT mathx.cpp)
+          '@ | Set-Content -Encoding utf8 mathsrc32\CMakeLists.txt
+          cmake -S mathsrc32 -B mathbuild32 -A Win32
+          cmake --build mathbuild32 --config Release --parallel 2
+          $obj=Get-ChildItem mathbuild32 -Recurse -Filter mathx.obj | Select-Object -First 1
+          if(!$obj){ throw 'mathx.obj x86 missing' }
+          New-Item -ItemType Directory -Force mathpkg32\src,mathpkg32\native\windows-x86 | Out-Null
+          Copy-Item tests\native_mathx\jau.pkg mathpkg32\jau.pkg
+          Copy-Item tests\native_mathx\src\main.jau mathpkg32\src\main.jau
+          Copy-Item $obj.FullName mathpkg32\native\windows-x86\mathx.obj
+      - name: Link and run MathX with internal jauld x86
+        shell: pwsh
+        run: |
+          $pm=(Resolve-Path .\build32\Release\jaupm.exe).Path
+          $jauc=(Resolve-Path .\build32\Release\jauc.exe).Path
+          Push-Location mathpkg32
+          & $pm pack dist\MathX-1.0.0.jaux
+          Pop-Location
+          $env:JAU_HOME="$PWD\math-home32"
+          & $pm install .\mathpkg32\dist\MathX-1.0.0.jaux
+          & $jauc native tests\native_mathx_consumer.jau -o mathx32.exe --target windows-x86 --debug
+          if($LASTEXITCODE -ne 0){ throw 'MathX x86 native link failed' }
+          $out=@(& .\mathx32.exe)
+          if(($out -join ',') -ne '42,42,1024'){ throw "MathX x86 output mismatch: $out" }
+      - name: Existing x86 linker regression
+        shell: pwsh
+        run: |
+          & .\build32\Release\jauc.exe native tests\v081_syntax.jau -o syntax32.exe --target windows-x86 -O3
+          $out=@(& .\syntax32.exe)
+          if(($out -join ',') -ne '10,157,-1'){ throw "syntax x86 regression: $out" }
+          & .\build32\Release\jauc.exe obj tests\entry_obj.jau -o entry32.obj --target windows-x86 -O3
+          & .\build32\Release\jauld.exe entry32.obj -o entry32.exe
+          $entry=@(& .\entry32.exe)
+          if(($entry -join ',') -ne '42'){ throw "entry x86 regression: $entry" }
+      - name: Commit helper
+        shell: pwsh
+        run: |
+          git rm tools/patch_x86_allmul.py .github/workflows/x86-allmul-land.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/jauld_part02.inc
+          git commit -m "jauld: provide MSVC x86 __allmul runtime helper"
+          git push origin HEAD:main
