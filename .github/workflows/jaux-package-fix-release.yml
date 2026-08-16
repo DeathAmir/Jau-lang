@@ -1,239 +1,28 @@
-name: jaux-package-fix-release
+name: jaux-package-fix
 
 on:
   push:
     branches: [main]
     paths:
       - '.github/workflows/jaux-package-fix-release.yml'
+      - 'tools/apply_jaux_fix.py'
 
 permissions:
   contents: write
 
 jobs:
-  patch-build-release:
-    runs-on: windows-latest
-    timeout-minutes: 20
+  apply-fix:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Apply native package/source separation and typed annotation fix
-        shell: pwsh
-        run: |
-          @'
-          from pathlib import Path
-          import re
-
-          p = Path('src/jau_part01.inc')
-          s = p.read_text(encoding='utf-8')
-
-          old = 'LBracket,RBracket,Comma,Semi,Dot,Plus'
-          new = 'LBracket,RBracket,Comma,Semi,Colon,Dot,Plus'
-          if old not in s and new not in s:
-              raise SystemExit('token enum anchor not found')
-          s = s.replace(old, new, 1)
-
-          old = "case ',':k=TK::Comma;break;case ';':k=TK::Semi;break;case '.':k=TK::Dot;break;"
-          new = "case ',':k=TK::Comma;break;case ';':k=TK::Semi;break;case ':':k=TK::Colon;break;case '.':k=TK::Dot;break;"
-          if old not in s and new not in s:
-              raise SystemExit('lexer switch anchor not found')
-          s = s.replace(old, new, 1)
-
-          block_anchor = '    std::vector<std::unique_ptr<Stmt>> block_body(){need(TK::LBrace,"expected {");std::vector<std::unique_ptr<Stmt>> v;while(!at(TK::RBrace)&&!at(TK::End))v.push_back(stmt());need(TK::RBrace,"expected }");return v;}\n'
-          helper = '    void skip_type_annotation(){if(eat(TK::Colon))qualified_id();}\n'
-          if helper not in s:
-              if block_anchor not in s:
-                  raise SystemExit('block_body anchor not found')
-              s = s.replace(block_anchor, block_anchor + helper, 1)
-
-          old_func = '    std::unique_ptr<Stmt> parse_func(bool external){\n        auto s=std::make_unique<Stmt>();s->k=Stmt::FuncS;s->external=external;s->name=qualified_id();if(!current_namespace.empty()&&s->name.find(\'.\')==std::string::npos)s->name=current_namespace+"."+s->name;need(TK::LParen,"expected (");if(!at(TK::RParen)){do{s->params.push_back(need(TK::Id,"expected parameter").text);}while(eat(TK::Comma));}need(TK::RParen,"expected )");if(external){need(TK::Semi,"expected ; after extern func");}else s->body=block_body();return s;\n    }'
-          new_func = '    std::unique_ptr<Stmt> parse_func(bool external){\n        auto s=std::make_unique<Stmt>();s->k=Stmt::FuncS;s->external=external;s->name=qualified_id();if(!current_namespace.empty()&&s->name.find(\'.\')==std::string::npos)s->name=current_namespace+"."+s->name;need(TK::LParen,"expected (");\n        if(!at(TK::RParen)){do{auto param=need(TK::Id,"expected parameter").text;skip_type_annotation();s->params.push_back(param);}while(eat(TK::Comma));}\n        need(TK::RParen,"expected )");skip_type_annotation();\n        if(external){need(TK::Semi,"expected ; after extern func");}else s->body=block_body();return s;\n    }'
-          if old_func in s:
-              s = s.replace(old_func, new_func, 1)
-          elif 'skip_type_annotation();s->params.push_back(param)' not in s:
-              raise SystemExit('parse_func anchor not found')
-
-          old_var = 's->name=need(TK::Id,"expected variable name").text;if(eat(TK::Eq))s->expr=expr();'
-          new_var = 's->name=need(TK::Id,"expected variable name").text;skip_type_annotation();if(eat(TK::Eq))s->expr=expr();'
-          if old_var in s:
-              s = s.replace(old_var, new_var, 1)
-
-          old_pkg = '''    if(fs::exists(archive)){
-        if(sub.empty()){auto mf=package_manifest(archive.string());sub=manifest_value(mf,"main");if(sub.empty())sub="main.jau";}
-        return expand_package_impl(archive,sub,opts,seen);
-    }'''
-          new_pkg = '''    if(fs::exists(archive)){
-        auto mf=package_manifest(archive.string());
-        auto type=lower_copy(manifest_value(mf,"type"));
-        if(sub.empty()){sub=manifest_value(mf,"main");if(sub.empty())sub="main.jau";}
-        auto ext=lower_copy(fs::path(sub).extension().string());
-        if(type=="native"&&!ext.empty()&&ext!=".jau")throw Error("native package source entry must be Jau source, not binary object: "+sub);
-        return expand_package_impl(archive,sub,opts,seen);
-    }'''
-          if old_pkg in s:
-              s = s.replace(old_pkg, new_pkg, 1)
-          elif 'native package source entry must be Jau source' not in s:
-              raise SystemExit('package spec anchor not found')
-
-          old_impl = '    fs::path normalized=fs::path(rel).lexically_normal();std::string rs=normalized.generic_string();std::string key=' 
-          new_impl = '    fs::path normalized=fs::path(rel).lexically_normal();auto source_ext=lower_copy(normalized.extension().string());if(!source_ext.empty()&&source_ext!=".jau")throw Error("package source resolver refused binary/non-Jau member: "+normalized.generic_string());std::string rs=normalized.generic_string();std::string key='
-          if old_impl in s:
-              s = s.replace(old_impl, new_impl, 1)
-          elif 'package source resolver refused binary/non-Jau member' not in s:
-              raise SystemExit('package impl anchor not found')
-
-          p.write_text(s, encoding='utf-8')
-
-          p = Path('src/jauc_main.cpp')
-          s = p.read_text(encoding='utf-8')
-          anchor = 'static std::string native_key(std::string target){for(char&c:target)if(c==\'-\')c=\'_\';return "native_"+target;}\n'
-          helper = 'static std::string lower_copy_local(std::string x){for(char&c:x)c=(char)std::tolower((unsigned char)c);return x;}\n'
-          if helper not in s:
-              if anchor not in s: raise SystemExit('jauc helper anchor not found')
-              s = s.replace(anchor, anchor + helper, 1)
-
-          old_native = '''        std::string mf=jau::package_manifest(archive.string());std::string members=manifest_value(mf,native_key(target));if(members.empty())members=manifest_value(mf,"native");
-        for(auto&member:split_csv(members)){std::string bytes=jau::package_read_file(archive.string(),member);fs::path p=temp/("pkg_"+std::to_string(serial++)+"_"+fs::path(member).filename().string());if(p.extension().empty())p+=".obj";write_binary(p,bytes);objects.push_back(p.string());}
-        for(auto&dep:split_csv(manifest_value(mf,"dependencies")))package(dep);
-        if(sub.empty())sub=manifest_value(mf,"main");if(!sub.empty()){try{scan_text(jau::package_read_file(archive.string(),sub),fs::current_path()/"__package__.jau");}catch(...) {}}'''
-          new_native = '''        std::string mf=jau::package_manifest(archive.string());std::string type=lower_copy_local(manifest_value(mf,"type"));
-        if(type=="native"){
-            std::string members=manifest_value(mf,native_key(target));if(members.empty())members=manifest_value(mf,"native");
-            if(members.empty())throw std::runtime_error("native package "+name+" has no object for target "+target);
-            for(auto&member:split_csv(members)){
-                auto ext=lower_copy_local(fs::path(member).extension().string());
-                if(ext!=".obj"&&ext!=".o")throw std::runtime_error("native package "+name+" member is not an object file: "+member);
-                std::string bytes=jau::package_read_file(archive.string(),member);
-                fs::path p=temp/("pkg_"+std::to_string(serial++)+"_"+fs::path(member).filename().string());
-                write_binary(p,bytes);objects.push_back(p.string());
-            }
-        }
-        for(auto&dep:split_csv(manifest_value(mf,"dependencies")))package(dep);
-        if(sub.empty())sub=manifest_value(mf,"main");
-        if(!sub.empty()){
-            auto ext=lower_copy_local(fs::path(sub).extension().string());
-            if(!ext.empty()&&ext!=".jau")throw std::runtime_error("package source entry is not Jau source: "+sub);
-            scan_text(jau::package_read_file(archive.string(),sub),fs::current_path()/"__package__.jau");
-        }'''
-          if old_native in s:
-              s = s.replace(old_native, new_native, 1)
-          elif 'native package "+name+" has no object for target' not in s:
-              raise SystemExit('NativeCollector anchor not found')
-          p.write_text(s, encoding='utf-8')
-
-          p = Path('src/jau_part03.inc')
-          s = p.read_text(encoding='utf-8')
-          s = s.replace('std::string version(){return "0.7.0";}', 'std::string version(){return "0.7.1";}')
-          p.write_text(s, encoding='utf-8')
-
-          Path('tests/native_extension/src/main.jau').write_text('''extern func cppmath_mul(a:int, b:int):int;\n\nnamespace CppMath {\n    func mul(a:int, b:int):int {\n        return cppmath_mul(a, b);\n    }\n}\n''', encoding='utf-8')
-
-          doc = Path('docs/INTEROP.md')
-          if doc.exists():
-              text = doc.read_text(encoding='utf-8')
-              marker = '## Native package source/binary separation (0.7.1)'
-              if marker not in text:
-                  text += '''\n\n## Native package source/binary separation (0.7.1)\n\nFor `type="native"` packages, Jau treats the manifest `main` entry as Jau source and the target-specific `native_windows_*` entries as opaque COFF object bytes. Native `.obj`/`.o` members are never passed to the lexer/parser; `jauc native` extracts them to a temporary object list and passes them directly to `jauld`.\n\nOptional function annotations such as `extern func f(a:int):int;` are accepted by the parser in 0.7.1. They are syntax metadata only for now; the current AOT ABI remains integer-oriented and does not yet perform full static type checking.\n'''
-                  doc.write_text(text, encoding='utf-8')
-          '@ | Set-Content -Encoding utf8 patch_jaux.py
-          python patch_jaux.py
-          Remove-Item patch_jaux.py
-
-      - name: Commit fix to main
-        shell: pwsh
+      - name: Apply patch
+        run: python tools/apply_jaux_fix.py
+      - name: Commit patch
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add src/jau_part01.inc src/jauc_main.cpp src/jau_part03.inc tests/native_extension/src/main.jau docs/INTEROP.md
           git commit -m "Fix native package source/object separation and typed FFI annotations"
           git push origin HEAD:main
-          "sha=$(git rev-parse HEAD)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-        id: commitfix
-
-      - name: Build Jau x64
-        shell: pwsh
-        run: |
-          cmake -S . -B build -A x64 -DJAU_ENABLE_ASM_FASTOPS=OFF
-          cmake --build build --config Release --parallel 2
-          if ((& .\build\Release\jauc.exe --version) -ne '0.7.1') { throw 'jauc version is not 0.7.1' }
-
-      - name: Build and validate typed C++ .jaux x64
-        shell: pwsh
-        run: |
-          cmake -S tests\native_extension -B extbuild -A x64
-          cmake --build extbuild --config Release --parallel 2
-          $obj = Get-ChildItem extbuild -Recurse -Filter cppmath.obj | Select-Object -First 1
-          if (!$obj) { throw 'C++ compiler did not produce cppmath.obj' }
-          New-Item -ItemType Directory -Force extpkg\native\windows-x86_64 | Out-Null
-          Copy-Item tests\native_extension\jau.pkg extpkg\jau.pkg
-          Copy-Item -Recurse tests\native_extension\src extpkg\src
-          Copy-Item $obj.FullName extpkg\native\windows-x86_64\cppmath.obj
-          $pm=(Resolve-Path .\build\Release\jaupm.exe).Path
-          $jauc=(Resolve-Path .\build\Release\jauc.exe).Path
-          Push-Location extpkg
-          & $pm pack dist\CppMath-1.0.0.jaux
-          Pop-Location
-          $env:JAU_HOME="$PWD\native-home"
-          & $pm install .\extpkg\dist\CppMath-1.0.0.jaux
-          & $jauc asm tests\native_extension_consumer.jau -o typed-x64.s --target windows-x86_64
-          & $jauc native tests\native_extension_consumer.jau -o typed-x64.exe --target windows-x86_64
-          $p=Start-Process -FilePath .\typed-x64.exe -PassThru
-          if(!$p.WaitForExit(5000)){Stop-Process -Id $p.Id -Force;throw 'typed .jaux x64 executable hung'}
-          if($p.ExitCode -ne 0){throw "typed .jaux x64 failed: $($p.ExitCode)"}
-
-      - name: Build Jau x86
-        shell: pwsh
-        run: |
-          cmake -S . -B build32 -A Win32 -DJAU_ENABLE_ASM_FASTOPS=OFF
-          cmake --build build32 --config Release --parallel 2
-
-      - name: Build and validate typed C++ .jaux x86
-        shell: pwsh
-        run: |
-          cmake -S tests\native_extension -B extbuild32 -A Win32
-          cmake --build extbuild32 --config Release --parallel 2
-          $obj = Get-ChildItem extbuild32 -Recurse -Filter cppmath.obj | Select-Object -First 1
-          if (!$obj) { throw 'C++ compiler did not produce x86 cppmath.obj' }
-          New-Item -ItemType Directory -Force extpkg32\native\windows-x86 | Out-Null
-          Copy-Item tests\native_extension\jau.pkg extpkg32\jau.pkg
-          Copy-Item -Recurse tests\native_extension\src extpkg32\src
-          Copy-Item $obj.FullName extpkg32\native\windows-x86\cppmath.obj
-          $pm=(Resolve-Path .\build32\Release\jaupm.exe).Path
-          $jauc=(Resolve-Path .\build32\Release\jauc.exe).Path
-          Push-Location extpkg32
-          & $pm pack dist\CppMath-1.0.0.jaux
-          Pop-Location
-          $env:JAU_HOME="$PWD\native-home32"
-          & $pm install .\extpkg32\dist\CppMath-1.0.0.jaux
-          & $jauc native tests\native_extension_consumer.jau -o typed-x86.exe --target windows-x86
-          $p=Start-Process -FilePath .\typed-x86.exe -PassThru
-          if(!$p.WaitForExit(5000)){Stop-Process -Id $p.Id -Force;throw 'typed .jaux x86 executable hung'}
-          if($p.ExitCode -ne 0){throw "typed .jaux x86 failed: $($p.ExitCode)"}
-
-      - name: Stage release archives
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force release\x64,release\x86 | Out-Null
-          Copy-Item build\Release\jauc.exe,build\Release\jur.exe,build\Release\jauas.exe,build\Release\jauld.exe,build\Release\jaupm.exe,build\Release\jau-setup.exe release\x64\
-          Copy-Item build32\Release\jauc.exe,build32\Release\jur.exe,build32\Release\jauas.exe,build32\Release\jauld.exe,build32\Release\jaupm.exe,build32\Release\jau-setup.exe release\x86\
-          Copy-Item -Recurse stdlib release\x64\stdlib
-          Copy-Item -Recurse stdlib release\x86\stdlib
-          Compress-Archive -Path release\x64\* -DestinationPath Jau-0.7.1-windows-x64.zip
-          Compress-Archive -Path release\x86\* -DestinationPath Jau-0.7.1-windows-x86.zip
-
-      - name: Create GitHub Release v0.7.1
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          $notes = @"
-          Jau 0.7.1 fixes native package source/object separation.
-
-          - `type="native"` package source (`main`) is parsed as Jau only.
-          - target-specific `.obj`/`.o` members are treated as opaque binary and passed directly to `jauld`.
-          - native package members are validated by target and object extension.
-          - optional FFI/function annotations such as `a:int` and `):int` are accepted (syntax metadata; no full static type checking yet).
-          - regression tested with a real C++ `.jaux` package on Windows x64 and x86.
-          "@
-          gh release create v0.7.1 Jau-0.7.1-windows-x64.zip Jau-0.7.1-windows-x86.zip --target "${{ steps.commitfix.outputs.sha }}" --title "Jau 0.7.1 - Native Package Fix" --notes $notes
