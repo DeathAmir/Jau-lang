@@ -1,0 +1,167 @@
+name: aot-package-regression
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows-x64:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Jau x64
+        shell: pwsh
+        run: |
+          cmake -S . -B build -A x64 -DJAU_ENABLE_ASM_FASTOPS=OFF
+          cmake --build build --config Release --parallel 2
+      - name: Native JauPM VM fallback
+        shell: pwsh
+        run: |
+          & .\build\Release\jauc.exe native tools\jaupm.jau -o jaupm-native.exe --target windows-x86_64 -I stdlib
+          if ($LASTEXITCODE -ne 0 -or !(Test-Path .\jaupm-native.exe)) { throw 'native JauPM fallback build failed' }
+          $v = & .\jaupm-native.exe version
+          if ($v -ne 'JauPM 0.7') { throw "native JauPM returned: $v" }
+      - name: Runtime package staging
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force runtime-pkg,native-home,portable -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force runtime-pkg\src,runtime-pkg\native,portable | Out-Null
+          @'
+          name="RuntimeMock"
+          version="1.0.0"
+          main="src/main.jau"
+          dependencies=""
+          runtime_windows_x86_64="native/mock.dll"
+          '@ | Set-Content -Encoding utf8 runtime-pkg\jau.pkg
+          @'
+          import "pkg.jau"
+          namespace RuntimeMock {
+              func runtime_ok() {
+                  if (file_exists(package_runtime("RuntimeMock"))) { return 42; }
+                  return 0;
+              }
+          }
+          '@ | Set-Content -Encoding utf8 runtime-pkg\src\main.jau
+          Set-Content -Encoding ascii runtime-pkg\native\mock.dll 'portable-runtime-fixture'
+          Push-Location runtime-pkg
+          & ..\build\Release\jaupm.exe pack dist\RuntimeMock@1.0.0.jaulib
+          Pop-Location
+          $env:JAU_HOME="$PWD\native-home"
+          & .\build\Release\jaupm.exe install .\runtime-pkg\dist\RuntimeMock@1.0.0.jaulib
+          @'
+          import "pkg:RuntimeMock"
+          print(RuntimeMock.runtime_ok[]);
+          '@ | Set-Content -Encoding utf8 consumer.jau
+          & .\build\Release\jauc.exe native consumer.jau -o portable\consumer.exe --target windows-x86_64 -I stdlib
+          if ($LASTEXITCODE -ne 0) { throw 'runtime-backed consumer native build failed' }
+          if (!(Test-Path portable\.jau\packages\RuntimeMock\package.jaup)) { throw 'portable package archive was not staged' }
+          if (!(Test-Path portable\.jau\packages\RuntimeMock\runtime.dll)) { throw 'portable runtime.dll was not staged' }
+          $env:JAU_HOME=''
+          Push-Location portable
+          $out = & .\consumer.exe
+          Pop-Location
+          if ($out -ne '42') { throw "portable runtime package output mismatch: $out" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aot-package-windows-x64
+          path: |
+            jaupm-native.exe
+            portable/consumer.exe
+            portable/.jau/packages/RuntimeMock/package.jaup
+            portable/.jau/packages/RuntimeMock/runtime.dll
+
+  linux-x64:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Jau x64
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j2
+      - name: Native JauPM VM fallback
+        run: |
+          ./build/jauc native tools/jaupm.jau -o jaupm-native --target linux-x86_64 -I stdlib
+          test -x ./jaupm-native
+          test "$(./jaupm-native version)" = "JauPM 0.7"
+      - name: Runtime package staging
+        run: |
+          rm -rf runtime-pkg native-home portable
+          mkdir -p runtime-pkg/src runtime-pkg/native portable
+          cat > runtime-pkg/jau.pkg <<'EOF'
+          name="RuntimeMock"
+          version="1.0.0"
+          main="src/main.jau"
+          dependencies=""
+          runtime_linux_x86_64="native/mock.so"
+          EOF
+          cat > runtime-pkg/src/main.jau <<'EOF'
+          import "pkg.jau"
+          namespace RuntimeMock {
+              func runtime_ok() {
+                  if (file_exists(package_runtime("RuntimeMock"))) { return 42; }
+                  return 0;
+              }
+          }
+          EOF
+          printf 'portable-runtime-fixture' > runtime-pkg/native/mock.so
+          (cd runtime-pkg && ../build/jaupm pack dist/RuntimeMock@1.0.0.jaulib)
+          export JAU_HOME="$PWD/native-home"
+          ./build/jaupm install ./runtime-pkg/dist/RuntimeMock@1.0.0.jaulib
+          cat > consumer.jau <<'EOF'
+          import "pkg:RuntimeMock"
+          print(RuntimeMock.runtime_ok[]);
+          EOF
+          ./build/jauc native consumer.jau -o portable/consumer --target linux-x86_64 -I stdlib
+          test -f portable/.jau/packages/RuntimeMock/package.jaup
+          test -f portable/.jau/packages/RuntimeMock/runtime.so
+          unset JAU_HOME
+          test "$(cd portable && ./consumer)" = "42"
+      - name: Latest and pinned registry resolution
+        run: |
+          rm -rf registry-work registry-home
+          mkdir -p registry-work/v1/src registry-work/v2/src registry-work/server/package/Versioned
+          cat > registry-work/v1/jau.pkg <<'EOF'
+          name="Versioned"
+          version="1.0.0"
+          main="src/main.jau"
+          dependencies=""
+          EOF
+          cat > registry-work/v1/src/main.jau <<'EOF'
+          namespace Versioned { func value() { return 100; } }
+          EOF
+          cat > registry-work/v2/jau.pkg <<'EOF'
+          name="Versioned"
+          version="1.2.0"
+          main="src/main.jau"
+          dependencies=""
+          EOF
+          cat > registry-work/v2/src/main.jau <<'EOF'
+          namespace Versioned { func value() { return 120; } }
+          EOF
+          (cd registry-work/v1 && ../../../build/jaupm pack ../server/package/Versioned/Versioned@1.0.0.jaulib)
+          (cd registry-work/v2 && ../../../build/jaupm pack ../server/package/Versioned/Versioned@1.2.0.jaulib)
+          python3 -m http.server 18766 --bind 127.0.0.1 --directory registry-work/server >/tmp/jau-registry.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          sleep 1
+          export JAU_HOME="$PWD/registry-home"
+          ./build/jaupm config set registry http://127.0.0.1:18766/package
+          ./build/jaupm install Versioned
+          ./build/jaupm info Versioned | grep -q 'version: 1.2.0'
+          ./build/jaupm remove Versioned
+          ./build/jaupm install Versioned@1.0.0
+          ./build/jaupm info Versioned | grep -q 'version: 1.0.0'
+          kill "$server_pid"
+          trap - EXIT
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aot-package-linux-x64
+          path: |
+            jaupm-native
+            portable/consumer
+            portable/.jau/packages/RuntimeMock/package.jaup
+            portable/.jau/packages/RuntimeMock/runtime.so

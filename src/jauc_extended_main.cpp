@@ -1,10 +1,10 @@
 /*
     Jau compiler extended driver
 
-    This translation unit keeps the v0.9 compiler driver intact while adding
-    multi-member static archives and a Windows-safe native source preprocessing
-    path. The legacy driver remains included as the single source of truth for
-    parsing, AOT generation, package discovery and PE/ELF target behavior.
+    The extended driver keeps the v0.9 compiler implementation as the source of
+    truth while adding multi-member static archives, Windows-safe native source
+    preprocessing, host-native VM fallback for AOT-incompatible programs and
+    portable package runtime staging for DLL/SO backed packages.
 */
 
 #define main jauc_legacy_entry_point
@@ -244,6 +244,272 @@ static int extended_static_command(int argc, char** argv) {
     }
 }
 
+static bool host_target_matches(const std::string& target) {
+#ifdef _WIN32
+    if (!is_windows_target(target)) return false;
+    if (sizeof(void*) == 8) return target == "windows-x86_64";
+    return target == "windows-x86";
+#else
+    if (is_windows_target(target)) return false;
+    if (sizeof(void*) == 8) return target == "linux-x86_64";
+    return target == "linux-x86";
+#endif
+}
+
+static bool aot_capability_failure(const std::string& message) {
+    return message.find("AOT") != std::string::npos ||
+           message.find("VM/bytecode") != std::string::npos ||
+           message.find("native array ABI") != std::string::npos ||
+           message.find("dynamic strings") != std::string::npos ||
+           message.find("unsupported expression") != std::string::npos ||
+           message.find("array indexing") != std::string::npos;
+}
+
+static std::string package_name_only(std::string name) {
+    name = trim_copy(name);
+    const auto at = name.find('@');
+    if (at != std::string::npos) name = name.substr(0, at);
+    return trim_copy(name);
+}
+
+static std::string runtime_manifest_key(std::string target) {
+    for (char& ch : target) if (ch == '-') ch = '_';
+    return "runtime_" + target;
+}
+
+struct PackageRuntimeStager {
+    std::string target;
+    fs::path output_root;
+    const jau::CompileOptions& options;
+    std::unordered_set<std::string> packages;
+    std::unordered_set<std::string> files;
+
+    fs::path resolve_local(const fs::path& origin, const std::string& imported) {
+        std::vector<fs::path> candidates{origin.parent_path() / imported};
+        for (const auto& path : options.import_paths) candidates.push_back(fs::path(path) / imported);
+        candidates.push_back(jau_home_path() / "stdlib" / imported);
+        candidates.push_back(fs::current_path() / "stdlib" / imported);
+        for (const auto& candidate : candidates) if (fs::exists(candidate)) return candidate;
+        return {};
+    }
+
+    void scan_text(const std::string& text, const fs::path& origin) {
+        static const std::regex import_re(R"(^\s*import\s+\"([^\"]+)\"\s*;?\s*$)");
+        std::istringstream input(text);
+        std::string line;
+        while (std::getline(input, line)) {
+            std::smatch match;
+            if (!std::regex_match(line, match, import_re)) continue;
+            const std::string imported = match[1].str();
+            if (imported.rfind("pkg:", 0) == 0) {
+                package(imported.substr(4));
+                continue;
+            }
+            const fs::path resolved = resolve_local(origin, imported);
+            if (!resolved.empty()) file(resolved);
+        }
+    }
+
+    void file(const fs::path& path) {
+        std::error_code error;
+        const fs::path absolute = fs::absolute(path, error).lexically_normal();
+        const std::string key = error ? path.lexically_normal().string() : absolute.string();
+        if (!files.insert(key).second) return;
+        const std::string text = read_text(path);
+        if (!text.empty()) scan_text(text, path);
+    }
+
+    void package(const std::string& raw_name) {
+        const std::string name = package_name_only(raw_name);
+        if (name.empty() || !packages.insert(name).second) return;
+
+        const fs::path archive = jau_home_path() / "packages" / name / "package.jaup";
+        if (!fs::exists(archive)) return;
+
+        const std::string manifest = jau::package_manifest(archive.string());
+        const fs::path package_dir = output_root / ".jau" / "packages" / name;
+        fs::create_directories(package_dir);
+        write_binary(package_dir / "package.jaup", read_text(archive));
+
+        const std::string runtime_member = manifest_value(manifest, runtime_manifest_key(target));
+        if (!runtime_member.empty()) {
+            const std::string bytes = jau::package_read_file(archive.string(), runtime_member);
+            if (bytes.empty()) throw std::runtime_error("package runtime is empty or missing: " + name + " -> " + runtime_member);
+            write_binary(package_dir / (is_windows_target(target) ? "runtime.dll" : "runtime.so"), bytes);
+        }
+
+        for (const auto& dependency : split_csv(manifest_value(manifest, "dependencies"))) {
+            package(dependency);
+        }
+
+        const std::string main = manifest_value(manifest, "main");
+        if (!main.empty()) {
+            const std::string source = jau::package_read_file(archive.string(), main);
+            if (!source.empty()) scan_text(source, fs::current_path() / "__package__.jau");
+        }
+    }
+};
+
+static void stage_package_runtimes(const std::string& input,
+                                   const std::string& output,
+                                   const std::string& target,
+                                   const jau::CompileOptions& options) {
+    fs::path executable = fs::absolute(output).lexically_normal();
+    fs::path root = executable.has_parent_path() ? executable.parent_path() : fs::current_path();
+    PackageRuntimeStager stager{target, root, options};
+    stager.file(input);
+}
+
+static bool package_requires_true_aot(const std::string& input,
+                                      const std::string& target,
+                                      const jau::CompileOptions& options) {
+    const fs::path temporary = fs::temp_directory_path() /
+        ("jau_fallback_probe_" + std::to_string(std::hash<std::string>{}(input + target)));
+    std::error_code error;
+    fs::remove_all(temporary, error);
+    fs::create_directories(temporary);
+    try {
+        const auto info = collect_native_package_info(input, target, temporary, options);
+        fs::remove_all(temporary, error);
+        return !info.objects.empty() || !info.system_libs.empty() || !info.imports.empty();
+    } catch (...) {
+        fs::remove_all(temporary, error);
+        return true;
+    }
+}
+
+struct NativeInvocation {
+    std::string input;
+    std::string output;
+    std::string target;
+    jau::CompileOptions options;
+};
+
+static NativeInvocation parse_native_invocation(int argc, char** argv) {
+    NativeInvocation invocation;
+    invocation.input = argv[2];
+    invocation.target = "linux-x86_64";
+    bool optimize_set = false;
+    for (int i = 3; i < argc; ++i) {
+        const std::string argument = argv[i];
+        if (argument == "-o" && i + 1 < argc) invocation.output = argv[++i];
+        else if (argument == "--target" && i + 1 < argc) invocation.target = argv[++i];
+        else if (argument == "--link" && i + 1 < argc) invocation.options.native_inputs.push_back(argv[++i]);
+        else if (argument == "--system-lib" && i + 1 < argc) invocation.options.system_libs.push_back(argv[++i]);
+        else if (argument == "--import" && i + 1 < argc) invocation.options.native_imports.push_back(argv[++i]);
+        else if (argument == "--subsystem" && i + 1 < argc) invocation.options.subsystem = lower_copy_local(argv[++i]);
+        else if (argument == "-I" && i + 1 < argc) invocation.options.import_paths.push_back(argv[++i]);
+        else if (argument == "--debug") invocation.options.debug = true;
+        else if (argument.rfind("-O", 0) == 0 && argument.size() == 3 && argument[2] >= '0' && argument[2] <= '3') {
+            invocation.options.optimize = argument[2] - '0';
+            optimize_set = true;
+        }
+    }
+    if (!optimize_set) invocation.options.optimize = 0;
+    if (invocation.output.empty()) invocation.output = is_windows_target(invocation.target) ? "jau-app.exe" : "a.out";
+    if (is_windows_target(invocation.target) && fs::path(invocation.output).extension() != ".exe") invocation.output += ".exe";
+    return invocation;
+}
+
+static int extended_native_command(int argc, char** argv) {
+    if (argc < 3) {
+        std::cerr << "jauc: native requires a Jau input file\n";
+        return 2;
+    }
+
+    NativeInvocation invocation = parse_native_invocation(argc, argv);
+    if (invocation.options.subsystem != "console" && invocation.options.subsystem != "windows") {
+        std::cerr << "jauc: --subsystem must be console or windows\n";
+        return 2;
+    }
+
+    fs::path source_temp;
+    std::error_code cleanup_error;
+#ifdef _WIN32
+    if (is_windows_target(invocation.target)) {
+        source_temp = fs::temp_directory_path() /
+            ("jau_native_sources_" + std::to_string(std::hash<std::string>{}(invocation.input + invocation.target + invocation.output)));
+        fs::remove_all(source_temp, cleanup_error);
+        fs::create_directories(source_temp);
+        int serial = 0;
+        for (auto& native_input : invocation.options.native_inputs) {
+            const std::string extension = lower_ext(native_input);
+            if (extension != ".c" && !is_cpp_ext(extension)) continue;
+            const fs::path object = source_temp / ("source_" + std::to_string(serial++) + ".obj");
+            if (!compile_native_source_safe(native_input, invocation.target, object)) {
+                fs::remove_all(source_temp, cleanup_error);
+                std::cerr << "jauc[native]: failed to compile native source: " << native_input << "\n";
+                return 1;
+            }
+            native_input = object.string();
+        }
+    }
+#endif
+
+    jau::Result result = is_windows_target(invocation.target)
+        ? windows_native_build(argv[0], invocation.input, invocation.output, invocation.target, invocation.options)
+        : generic_native_build_with_packages(invocation.input, invocation.output, invocation.target, invocation.options);
+
+    if (result.ok) {
+        try {
+            stage_package_runtimes(invocation.input, invocation.output, invocation.target, invocation.options);
+        } catch (const std::exception& exception) {
+            if (!source_temp.empty()) fs::remove_all(source_temp, cleanup_error);
+            std::cerr << "jauc[native]: runtime staging failed: " << exception.what() << "\n";
+            return 1;
+        }
+        if (!source_temp.empty()) fs::remove_all(source_temp, cleanup_error);
+        if (!result.message.empty()) std::cout << result.message << "\n";
+        return 0;
+    }
+
+    const bool explicit_native_linkage = !invocation.options.native_inputs.empty() ||
+                                         !invocation.options.system_libs.empty() ||
+                                         !invocation.options.native_imports.empty();
+    const bool true_aot_package = package_requires_true_aot(invocation.input, invocation.target, invocation.options);
+    const bool can_fallback = aot_capability_failure(result.message) &&
+                              host_target_matches(invocation.target) &&
+                              !explicit_native_linkage &&
+                              !true_aot_package &&
+                              invocation.options.subsystem == "console";
+
+    if (can_fallback) {
+        const fs::path self = current_executable_path(argv[0]);
+        const fs::path runtime = self.parent_path() /
+#ifdef _WIN32
+            "jur.exe";
+#else
+            "jur";
+#endif
+        if (fs::exists(runtime)) {
+            auto fallback = jau::bundle_executable(invocation.input, invocation.output, runtime.string(), invocation.options);
+            if (fallback.ok) {
+                try {
+                    stage_package_runtimes(invocation.input, invocation.output, invocation.target, invocation.options);
+                } catch (const std::exception& exception) {
+                    if (!source_temp.empty()) fs::remove_all(source_temp, cleanup_error);
+                    std::cerr << "jauc[native]: runtime staging failed: " << exception.what() << "\n";
+                    return 1;
+                }
+                if (!source_temp.empty()) fs::remove_all(source_temp, cleanup_error);
+                std::cout << "native executable built with embedded Jau VM fallback: " << invocation.output << "\n";
+                if (invocation.options.debug) std::cerr << "[jauc:fallback] AOT reason: " << result.message << "\n";
+                return 0;
+            }
+        }
+    }
+
+    if (!source_temp.empty()) fs::remove_all(source_temp, cleanup_error);
+    print_diagnostic(invocation.input, "native", result.message);
+    if (aot_capability_failure(result.message) && !host_target_matches(invocation.target)) {
+        std::cerr << "jauc[native]: VM fallback is available only when --target matches the architecture of this jauc executable\n";
+    }
+    if (aot_capability_failure(result.message) && true_aot_package) {
+        std::cerr << "jauc[native]: package uses native object/import metadata and therefore requires true AOT-compatible Jau source\n";
+    }
+    return 1;
+}
+
 static void extended_help() {
     std::cout << "Jau compiler " << jau::version() << "\nusage:\n"
               << "  jauc build <file.jau> [-o out.jbc] [-O0|-O1|-O2|-O3]\n"
@@ -258,15 +524,16 @@ static void extended_help() {
               << "  jauc targets\n"
               << "  jauc standalone <file.jau> -o program [--runtime path/to/jur]\n"
               << "  jauc --version\n\n"
-              << "Multiple --link options are accepted by native, shared and static builds.\n"
-              << "Windows shared libraries use Jau's internal PE DLL linker; VM programs can load DLL/SO runtimes through stdlib/ffi.jau.\n";
+              << "Native executable builds use true AOT when possible. On a matching host target, VM-only standard-library, dynamic string/array and FFI programs automatically fall back to a self-contained embedded-Jau executable.\n"
+              << "Imported package DLL/SO runtimes are staged under .jau/packages beside native executable output so runtime-backed packages remain portable when launched from the output directory.\n"
+              << "Multiple --link options are accepted by native, shared and static builds. Shared/static outputs remain true C-ABI AOT artifacts.\n";
 }
 
 static int dispatch_with_safe_windows_sources(int argc, char** argv) {
 #ifdef _WIN32
     if (argc >= 3) {
         const std::string command = argv[1];
-        if (command == "native" || command == "shared") {
+        if (command == "shared") {
             std::string target = "linux-x86_64";
             for (int i = 3; i + 1 < argc; ++i) {
                 if (std::string(argv[i]) == "--target") target = argv[i + 1];
@@ -322,6 +589,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         if (command == "static") return extended_static_command(argc, argv);
+        if (command == "native") return extended_native_command(argc, argv);
         return dispatch_with_safe_windows_sources(argc, argv);
     } catch (const std::exception& exception) {
         std::cerr << "jauc[fatal]: " << exception.what() << "\n";
