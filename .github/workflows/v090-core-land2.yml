@@ -1,0 +1,133 @@
+name: v090-core-land2
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/patch_v090_apply.py'
+      - '.github/workflows/v090-core-land2.yml'
+permissions:
+  contents: write
+jobs:
+  validate-and-land:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - name: Apply Jau 0.9 patch
+        shell: pwsh
+        run: python tools/patch_v090_apply.py
+      - name: Build x64
+        shell: pwsh
+        run: |
+          cmake -S . -B build -A x64 -DJAU_ENABLE_ASM_FASTOPS=OFF
+          cmake --build build --config Release --parallel 2
+          $v=& .\build\Release\jauc.exe --version 2> banner.txt
+          if($v -ne '0.9.0'){throw "unexpected version $v"}
+          if(!(Test-Path .\build\Release\jaum.exe)){throw 'jaum missing'}
+      - name: Build Win32 probe x64
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force metric64 | Out-Null
+          @'
+          #include <windows.h>
+          #include <cstdint>
+          extern "C" std::intptr_t win_metric(){return (std::intptr_t)GetSystemMetrics(0);}
+          extern "C" std::intptr_t open_box(){return (std::intptr_t)MessageBoxA(nullptr,"Jau","Jau",MB_OK);}
+          '@ | Set-Content -Encoding utf8 metric64\metric.cpp
+          @'
+          cmake_minimum_required(VERSION 3.16)
+          project(JauMetric LANGUAGES CXX)
+          add_library(metric OBJECT metric.cpp)
+          '@ | Set-Content -Encoding utf8 metric64\CMakeLists.txt
+          cmake -S metric64 -B metric64\build -A x64
+          cmake --build metric64\build --config Release --parallel 2
+          $obj=Get-ChildItem metric64\build -Recurse -Filter metric.obj | Select-Object -First 1
+          if(!$obj){throw 'metric.obj missing'}
+          Copy-Item $obj.FullName metric64\metric.obj
+          @'
+          extern func win_metric():int;
+          func main(){let x=win_metric();if(x>0){print(1);}else{print(0);}return 0;}
+          '@ | Set-Content -Encoding utf8 winprobe.jau
+      - name: System DLL and explicit import x64
+        shell: pwsh
+        run: |
+          & .\build\Release\jauc.exe native winprobe.jau -o systemlib.exe --target windows-x86_64 --link metric64\metric.obj --system-lib user32 --debug 2> systemlib.txt
+          if($LASTEXITCODE -ne 0){Get-Content systemlib.txt;throw 'user32 system-lib failed'}
+          if((@(& .\systemlib.exe) -join ',') -ne '1'){throw 'user32 executable failed'}
+          if(!(Select-String systemlib.txt -Pattern '[jauc:system-lib] user32' -SimpleMatch -Quiet)){throw 'system-lib not propagated'}
+          & .\build\Release\jauc.exe native winprobe.jau -o explicit.exe --target windows-x86_64 --link metric64\metric.obj --import GetSystemMetrics=user32.dll
+          if($LASTEXITCODE -ne 0){throw 'explicit import failed'}
+          if((@(& .\explicit.exe) -join ',') -ne '1'){throw 'explicit import executable failed'}
+      - name: Package system library propagation
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force pkg\src,pkg\native\windows-x86_64 | Out-Null
+          Copy-Item metric64\metric.obj pkg\native\windows-x86_64\metric.obj
+          @'
+          name="WinProbe"
+          version="1.0.0"
+          main="src/main.jau"
+          type="native"
+          native_windows_x86_64="native/windows-x86_64/metric.obj"
+          system_libs_windows="user32"
+          '@ | Set-Content -Encoding utf8 pkg\jau.pkg
+          @'
+          extern func win_metric():int;
+          namespace WinProbe {func metric(){return win_metric();}}
+          '@ | Set-Content -Encoding utf8 pkg\src\main.jau
+          $pm=(Resolve-Path .\build\Release\jaupm.exe).Path
+          Push-Location pkg; & $pm pack dist\WinProbe-1.0.0.jaux; Pop-Location
+          if($LASTEXITCODE -ne 0){throw 'pack failed'}
+          $env:JAU_HOME="$PWD\pkghome"
+          & $pm install .\pkg\dist\WinProbe-1.0.0.jaux
+          @'
+          import "pkg:WinProbe"
+          func main(){let x=WinProbe.metric();if(x>0){print(1);}else{print(0);}return 0;}
+          '@ | Set-Content -Encoding utf8 consumer.jau
+          & .\build\Release\jauc.exe native consumer.jau -o consumer.exe --target windows-x86_64 --debug 2> pkg.txt
+          if($LASTEXITCODE -ne 0){Get-Content pkg.txt;throw 'package native link failed'}
+          if(!(Select-String pkg.txt -Pattern '[jauc:system-lib] user32' -SimpleMatch -Quiet)){throw 'manifest system lib missing'}
+          if((@(& .\consumer.exe) -join ',') -ne '1'){throw 'package executable failed'}
+      - name: Clean generated artifacts and JauM
+        shell: pwsh
+        run: |
+          & .\build\Release\jauc.exe asm tests\v090_core.jau -o clean.s --target windows-x86_64
+          if(Select-String clean.s -Pattern 'DeathAmir Jau @ DeathAmir 2026 (C)' -SimpleMatch -Quiet){throw 'assembly branded'}
+          & .\build\Release\jauc.exe native tests\v090_core.jau -o clean.exe --target windows-x86_64
+          $ascii=[Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes((Resolve-Path .\clean.exe)))
+          if($ascii.Contains('DeathAmir Jau @ DeathAmir 2026 (C)')){throw 'exe branded'}
+          & .\build\Release\jauc.exe standalone tests\v090_core.jau -o standalone.exe --runtime .\build\Release\jur.exe
+          $out=@(& .\standalone.exe 2> standerr.txt)
+          if(Select-String standerr.txt -Pattern 'DeathAmir Jau @ DeathAmir 2026 (C)' -SimpleMatch -Quiet){throw 'standalone branded at runtime'}
+          if(($out -join ',') -ne '42'){throw 'standalone failed'}
+          Copy-Item tests\v090_jaum.txt jaum.txt
+          & .\build\Release\jaum.exe build -f jaum.txt
+          if($LASTEXITCODE -ne 0){throw 'JauM failed'}
+          if((@(& .\build-jaum\v090-windows-x86_64.exe) -join ',') -ne '42'){throw 'JauM output failed'}
+      - name: Build and validate x86 system library
+        shell: pwsh
+        run: |
+          cmake -S . -B build32 -A Win32 -DJAU_ENABLE_ASM_FASTOPS=OFF
+          cmake --build build32 --config Release --parallel 2
+          New-Item -ItemType Directory -Force metric32 | Out-Null
+          Copy-Item metric64\metric.cpp,metric64\CMakeLists.txt metric32\
+          cmake -S metric32 -B metric32\build -A Win32
+          cmake --build metric32\build --config Release --parallel 2
+          $obj=Get-ChildItem metric32\build -Recurse -Filter metric.obj | Select-Object -First 1
+          Copy-Item $obj.FullName metric32\metric.obj
+          & .\build32\Release\jauc.exe native winprobe.jau -o x86.exe --target windows-x86 --link metric32\metric.obj --system-lib user32
+          if($LASTEXITCODE -ne 0){throw 'x86 system lib failed'}
+          if((@(& .\x86.exe) -join ',') -ne '1'){throw 'x86 executable failed'}
+      - name: Existing tests
+        shell: pwsh
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Land validated core
+        shell: pwsh
+        run: |
+          git rm tools/patch_v090_core.py tools/patch_v090_apply.py .github/workflows/v090-core-land.yml .github/workflows/v090-core-land2.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add CMakeLists.txt include/jau/jau.hpp src/jau_part03.inc src/jur_main.cpp src/jauld_part00.inc src/jauld_part01.inc src/jauld_part02.inc src/jauld_part03.inc src/jauc_main.cpp src/jaum_main.cpp tests/v090_core.jau tests/v090_jaum.txt
+          git commit -m "Jau 0.9: system libraries, clean artifacts and JauM"
+          git push origin HEAD:main
