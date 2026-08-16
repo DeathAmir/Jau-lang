@@ -378,20 +378,19 @@ func latest_from_listing(name, listing) {
     return latest;
 }
 
+func registry_root_listing() {
+    return http_get(registry_base() + "/");
+}
+
+func registry_has_version_folder(name, listing) {
+    if (contains(listing, "href=\"" + name + "/\"")) { return true; }
+    if (contains(listing, "href='" + name + "/'")) { return true; }
+    if (contains(listing, ">" + name + "/<")) { return true; }
+    return false;
+}
+
 func latest_registry_version(name) {
     let folder = registry_package_url(name);
-    let hint = http_get(folder + "/latest");
-    if (hint != "") {
-        let value = manifest_value(hint, "version");
-        if (version_valid(value)) { return value; }
-        if (version_valid(trim(hint))) { return trim(hint); }
-    }
-    let hint2 = http_get(folder + "/latest.txt");
-    if (hint2 != "") {
-        let value2 = manifest_value(hint2, "version");
-        if (version_valid(value2)) { return value2; }
-        if (version_valid(trim(hint2))) { return trim(hint2); }
-    }
     let listing = http_get(folder + "/");
     if (listing == "") { return ""; }
     return latest_from_listing(name, listing);
@@ -399,43 +398,35 @@ func latest_registry_version(name) {
 
 func install_registry_version(name, version) {
     let folder = registry_package_url(name);
-    let extensions = [".jaulib", ".jaux", ".jaup"];
-    let i = 0;
-    while (i < len(extensions)) {
-        let remote = folder + "/" + package_filename(name, version, extensions[i]);
-        let archive = download_archive_quiet(remote, name + "@" + version);
-        if (archive != "") {
-            print("Resolved " + name + "@" + version + " -> " + remote);
-            print("Downloaded " + str(file_size(archive)) + " bytes");
-            return install_archive(archive, remote);
-        }
-        i = i + 1;
-    }
-    let direct = registry_base() + "/" + name + "@" + version;
-    let old_archive = download_archive_quiet(direct, name + "@" + version);
-    if (old_archive != "") {
-        print("Resolved legacy package -> " + direct);
-        return install_archive(old_archive, direct);
-    }
-    print("JauPM: package version not found: " + name + "@" + version);
-    return 1;
+    let remote = folder + "/" + package_filename(name, version, ".jaulib");
+    print("Resolving " + name + "@" + version + " -> " + remote);
+    let archive = download_archive(remote, name + "@" + version);
+    if (archive == "") { return 1; }
+    return install_archive(archive, remote);
 }
 
 func install_registry_latest(name) {
     print("Resolving latest version of " + name + "...");
-    let version = latest_registry_version(name);
-    if (version != "") {
+    let root = registry_root_listing();
+    if (registry_has_version_folder(name, root)) {
+        let version = latest_registry_version(name);
+        if (version == "") {
+            print("JauPM: no versioned .jaulib package found for: " + name);
+            return 1;
+        }
         print("Latest version: " + version);
         return install_registry_version(name, version);
     }
+
     let direct = registry_url(name);
-    let archive = download_archive_quiet(direct, name);
-    if (archive != "") {
-        print("Resolved legacy registry package -> " + direct);
-        return install_archive(archive, direct);
+    if (!contains(root, name)) {
+        print("JauPM: package not found in registry: " + name);
+        return 1;
     }
-    print("JauPM: cannot resolve package: " + name);
-    return 1;
+    let archive = download_archive(direct, name);
+    if (archive == "") { return 1; }
+    print("Resolved legacy registry package -> " + direct);
+    return install_archive(archive, direct);
 }
 
 func install_target(spec, url) {
