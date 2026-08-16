@@ -1,0 +1,143 @@
+name: v090-shared-land
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/patch_v090_shared2.py'
+      - '.github/workflows/v090-shared-land.yml'
+permissions:
+  contents: write
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - name: Apply shared-library patch
+        shell: pwsh
+        run: python tools/patch_v090_shared2.py
+      - name: Build Jau x64
+        shell: pwsh
+        run: |
+          cmake -S . -B build -A x64 -DJAU_ENABLE_ASM_FASTOPS=OFF
+          cmake --build build --config Release --parallel 2
+      - name: Build and load Jau DLL x64
+        shell: pwsh
+        run: |
+          & .\build\Release\jauc.exe shared tests\v090_shared.jau -o jaucalc --target windows-x86_64 --export add --export answer --debug
+          if($LASTEXITCODE -ne 0){throw 'x64 DLL build failed'}
+          if(!(Test-Path .\jaucalc.dll)){throw 'jaucalc.dll missing'}
+          $ascii=[Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes((Resolve-Path .\jaucalc.dll)))
+          if($ascii.Contains('DeathAmir Jau @ DeathAmir 2026 (C)')){throw 'DLL contains tool copyright'}
+          New-Item -ItemType Directory -Force dllclient | Out-Null
+          @'
+          #include <windows.h>
+          #include <cstdint>
+          #include <cstdio>
+          int main(){
+            HMODULE h=LoadLibraryA("jaucalc.dll"); if(!h){std::printf("load:%lu\n",GetLastError());return 2;}
+            using bin=std::intptr_t(*)(std::intptr_t,std::intptr_t); using zero=std::intptr_t(*)();
+            auto add=(bin)GetProcAddress(h,"add"); auto answer=(zero)GetProcAddress(h,"answer");
+            if(!add||!answer){std::printf("proc:%lu\n",GetLastError());return 3;}
+            std::printf("%lld %lld\n",(long long)add(20,22),(long long)answer()); FreeLibrary(h); return 0;
+          }
+          '@ | Set-Content -Encoding utf8 dllclient\main.cpp
+          @'
+          cmake_minimum_required(VERSION 3.16)
+          project(JauDllClient LANGUAGES CXX)
+          add_executable(client main.cpp)
+          '@ | Set-Content -Encoding utf8 dllclient\CMakeLists.txt
+          cmake -S dllclient -B dllclient\build -A x64
+          cmake --build dllclient\build --config Release --parallel 2
+          Copy-Item .\jaucalc.dll .\dllclient\build\Release\jaucalc.dll
+          $out=& .\dllclient\build\Release\client.exe
+          if($out -ne '42 42'){throw "x64 DLL call mismatch: $out"}
+      - name: JauM shared project x64
+        shell: pwsh
+        run: |
+          Copy-Item tests\v090_jaum_shared.txt jaum-shared.txt
+          & .\build\Release\jaum.exe build -f jaum-shared.txt
+          if($LASTEXITCODE -ne 0){throw 'JauM shared build failed'}
+          if(!(Test-Path .\build-jaum\jaucalc-windows-x86_64.dll)){throw 'JauM DLL output missing'}
+      - name: Build and load Jau DLL x86
+        shell: pwsh
+        run: |
+          cmake -S . -B build32 -A Win32 -DJAU_ENABLE_ASM_FASTOPS=OFF
+          cmake --build build32 --config Release --parallel 2
+          & .\build32\Release\jauc.exe shared tests\v090_shared.jau -o jaucalc32 --target windows-x86 --export add --export answer
+          if($LASTEXITCODE -ne 0){throw 'x86 DLL build failed'}
+          New-Item -ItemType Directory -Force dllclient32 | Out-Null
+          Copy-Item dllclient\main.cpp,dllclient\CMakeLists.txt dllclient32\
+          cmake -S dllclient32 -B dllclient32\build -A Win32
+          cmake --build dllclient32\build --config Release --parallel 2
+          Copy-Item .\jaucalc32.dll .\dllclient32\build\Release\jaucalc.dll
+          $out=& .\dllclient32\build\Release\client.exe
+          if($out -ne '42 42'){throw "x86 DLL call mismatch: $out"}
+      - name: Existing Windows regressions
+        shell: pwsh
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Stage validated patch for landing
+        shell: pwsh
+        run: |
+          git diff -- CMakeLists.txt include src tests > shared.patch
+          if((Get-Item shared.patch).Length -eq 0){throw 'shared patch unexpectedly empty'}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v090-shared-validated-patch
+          path: shared.patch
+
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply shared-library patch
+        run: python3 tools/patch_v090_shared2.py
+      - name: Build Jau Linux x64
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j2
+      - name: Build and load Jau .so x64
+        run: |
+          ./build/jauc shared tests/v090_shared.jau -o libjaucalc --target linux-x86_64 --export add --export answer
+          test -f libjaucalc.so
+          ! grep -a -q 'DeathAmir Jau @ DeathAmir 2026 (C)' libjaucalc.so
+          cat > client.c <<'EOF'
+          #include <dlfcn.h>
+          #include <stdint.h>
+          #include <stdio.h>
+          int main(void){
+            void* h=dlopen("./libjaucalc.so",RTLD_NOW); if(!h){puts(dlerror());return 2;}
+            intptr_t (*add)(intptr_t,intptr_t)=(intptr_t(*)(intptr_t,intptr_t))dlsym(h,"add");
+            intptr_t (*answer)(void)=(intptr_t(*)(void))dlsym(h,"answer");
+            if(!add||!answer){puts(dlerror());return 3;}
+            printf("%ld %ld\n",(long)add(20,22),(long)answer()); dlclose(h); return 0;
+          }
+          EOF
+          cc client.c -ldl -o client
+          test "$(./client)" = '42 42'
+          nm -D --defined-only libjaucalc.so | grep -E ' [Tt] add$'
+          nm -D --defined-only libjaucalc.so | grep -E ' [Tt] answer$'
+      - name: Existing Linux regressions
+        run: ctest --test-dir build --output-on-failure
+
+  land:
+    needs: [windows, linux]
+    runs-on: ubuntu-latest
+    permissions: {contents: write}
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/download-artifact@v4
+        with:
+          name: v090-shared-validated-patch
+          path: .
+      - name: Apply validated patch and land
+        run: |
+          git apply shared.patch
+          rm shared.patch
+          git rm tools/patch_v090_shared.py tools/patch_v090_shared2.py .github/workflows/v090-shared-land.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add CMakeLists.txt include src tests
+          git commit -m 'Jau 0.9: native DLL and shared library exports'
+          git push origin HEAD:main
