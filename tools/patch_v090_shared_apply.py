@@ -33,3 +33,15 @@ if old not in src:
     raise SystemExit('shared patch rep() definition not found')
 src = src.replace(old,new,1)
 exec(compile(src, 'tools/patch_v090_shared2.py', 'exec'), {'__name__':'__main__'})
+
+# The shared patch intentionally emits GAS aliases. Preserve the escape
+# sequences inside the generated C++ string instead of letting Python turn them
+# into literal source newlines.
+p = Path('src/jau_part03.inc')
+s = p.read_text(encoding='utf-8')
+broken = 'if(pub!=target)f<<"\n.globl "<<pub<<"\n.set "<<pub<<","<<target<<"\n";}}'
+fixed = 'if(pub!=target)f<<"\\n.globl "<<pub<<"\\n.set "<<pub<<","<<target<<"\\n";}}'
+if broken not in s:
+    raise SystemExit('shared export alias escape fix anchor not found')
+s = s.replace(broken,fixed,1)
+p.write_text(s,encoding='utf-8')
