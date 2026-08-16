@@ -92,8 +92,8 @@ jobs:
           $vmO3=@(& $jauc run tests\v082_control_flow.jau -O3 2> vm-o3-banner.txt)
           if (($vmO3 -join ',') -ne '1') { throw "VM -O3 compatibility output mismatch: $vmO3" }
           Set-Content -Encoding utf8 bad.jau 'func main( {'
-          & $jauc check bad.jau 2> bad-error.txt
-          if ($LASTEXITCODE -eq 0) { throw 'invalid source unexpectedly succeeded' }
+          $p = Start-Process -FilePath $jauc -ArgumentList @('check','bad.jau') -RedirectStandardOutput bad-out.txt -RedirectStandardError bad-error.txt -Wait -PassThru
+          if ($p.ExitCode -eq 0) { throw 'invalid source unexpectedly succeeded' }
           if ((Get-Item bad-error.txt).Length -eq 0) { throw 'invalid source produced no diagnostic' }
       - name: Existing namespace regression
         shell: pwsh
