@@ -1,0 +1,112 @@
+name: release-v080
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-v080.yml'
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Windows x64
+        shell: pwsh
+        run: |
+          cmake -S . -B build -A x64 -DJAU_ENABLE_ASM_FASTOPS=OFF
+          cmake --build build --config Release --parallel 2
+          $v = & .\build\Release\jauc.exe --version
+          if ($v -ne '0.8.0') { throw "unexpected x64 version: $v" }
+          & .\build\Release\jauc.exe native tests\syntax_v08.jau -o syntax-release-x64.exe --target windows-x86_64 -O3
+          $out = & .\syntax-release-x64.exe
+          if ($out -ne '12') { throw "x64 syntax smoke failed: $out" }
+
+      - name: Build Windows x86
+        shell: pwsh
+        run: |
+          cmake -S . -B build32 -A Win32 -DJAU_ENABLE_ASM_FASTOPS=OFF
+          cmake --build build32 --config Release --parallel 2
+          $v = & .\build32\Release\jauc.exe --version
+          if ($v -ne '0.8.0') { throw "unexpected x86 version: $v" }
+          & .\build32\Release\jauc.exe native tests\syntax_v08.jau -o syntax-release-x86.exe --target windows-x86 -O3
+          $out = & .\syntax-release-x86.exe
+          if ($out -ne '12') { throw "x86 syntax smoke failed: $out" }
+
+      - name: Validate native package COFF symbol resolution x64
+        shell: pwsh
+        run: |
+          cmake -S tests\native_alias -B aliasbuild -A x64
+          cmake --build aliasbuild --config Release --parallel 2
+          $obj = Get-ChildItem aliasbuild -Recurse -Filter mathx.obj | Select-Object -First 1
+          if (!$obj) { throw 'MathAlias object was not built' }
+          New-Item -ItemType Directory -Force aliaspkg\src,aliaspkg\native\windows-x86_64 | Out-Null
+          Copy-Item tests\native_alias\jau.pkg aliaspkg\jau.pkg
+          Copy-Item tests\native_alias\src\main.jau aliaspkg\src\main.jau
+          Copy-Item $obj.FullName aliaspkg\native\windows-x86_64\mathx.obj
+          $pm = (Resolve-Path .\build\Release\jaupm.exe).Path
+          $jauc = (Resolve-Path .\build\Release\jauc.exe).Path
+          Push-Location aliaspkg
+          & $pm pack dist\MathAlias-1.0.0.jaux
+          Pop-Location
+          $env:JAU_HOME = "$PWD\release-native-home"
+          & $pm install .\aliaspkg\dist\MathAlias-1.0.0.jaux
+          & $jauc native tests\native_alias_consumer.jau -o alias-release.exe --target windows-x86_64 --debug
+          $p = Start-Process .\alias-release.exe -PassThru
+          if (!$p.WaitForExit(5000)) { Stop-Process -Id $p.Id -Force; throw 'native alias release smoke hung' }
+          if ($p.ExitCode -ne 0) { throw "native alias release smoke failed: $($p.ExitCode)" }
+
+      - name: Stage release archives
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release\x64\stdlib,release\x64\tools,release\x64\bootstrap,release\x64\packages,release\x64\docs | Out-Null
+          New-Item -ItemType Directory -Force release\x86\stdlib,release\x86\tools,release\x86\bootstrap,release\x86\packages,release\x86\docs | Out-Null
+
+          Copy-Item build\Release\jauc.exe,build\Release\jur.exe,build\Release\jauas.exe,build\Release\jauld.exe,build\Release\jaupm.exe,build\Release\jau-setup.exe release\x64\
+          Copy-Item build32\Release\jauc.exe,build32\Release\jur.exe,build32\Release\jauas.exe,build32\Release\jauld.exe,build32\Release\jaupm.exe,build32\Release\jau-setup.exe release\x86\
+
+          Copy-Item stdlib\* release\x64\stdlib\
+          Copy-Item stdlib\* release\x86\stdlib\
+          Copy-Item tools\jaupm.jau release\x64\tools\
+          Copy-Item tools\jaupm.jau release\x86\tools\
+          Copy-Item bootstrap\jauc_stage1.jau release\x64\bootstrap\
+          Copy-Item bootstrap\jauc_stage1.jau release\x86\bootstrap\
+          Copy-Item -Recurse packages\JTTP release\x64\packages\
+          Copy-Item -Recurse packages\JTTP release\x86\packages\
+          Copy-Item docs\*.md release\x64\docs\
+          Copy-Item docs\*.md release\x86\docs\
+          Copy-Item README.md release\x64\
+          Copy-Item README.md release\x86\
+
+          Compress-Archive -Path release\x64\* -DestinationPath Jau-0.8.0-windows-x64.zip -Force
+          Compress-Archive -Path release\x86\* -DestinationPath Jau-0.8.0-windows-x86.zip -Force
+
+          $x64 = (Get-FileHash Jau-0.8.0-windows-x64.zip -Algorithm SHA256).Hash.ToLower()
+          $x86 = (Get-FileHash Jau-0.8.0-windows-x86.zip -Algorithm SHA256).Hash.ToLower()
+          "Jau-0.8.0-windows-x64.zip  $x64`nJau-0.8.0-windows-x86.zip  $x86" | Set-Content SHA256SUMS.txt
+          Get-Content SHA256SUMS.txt
+
+      - name: Create GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          @'
+          Jau 0.8.0 focuses on native package interoperability, diagnostics, debugging, and syntax.
+
+          Highlights:
+          - `.jaux` target objects remain binary and are linked directly instead of entering the parser.
+          - `jauc` reads defined COFF symbols from native package `.obj` files before AOT code generation.
+          - AOT resolves common decorated native names such as `mx_add`, `_mx_add`, and stdcall forms.
+          - `jauld` adds decorated-symbol fallback matching with ambiguity detection.
+          - `jauc check`, `jauc debug`, and `--debug` native/package diagnostics.
+          - Top-level compiler exception handling and stage-specific native build errors.
+          - C-style `for`, `++`, `--`, compound assignments, `fn`, `var`, and block comments.
+          - Windows x86/x64 internal PE linker and `.jaux` C/C++ extension regressions validated in CI.
+
+          See `docs/V080.md` for examples and details.
+          '@ | Set-Content release-notes.md
+
+          gh release create v0.8.0 Jau-0.8.0-windows-x64.zip Jau-0.8.0-windows-x86.zip SHA256SUMS.txt --target $env:GITHUB_SHA --title "Jau 0.8.0 - Native Symbols, Debugger & Syntax" --notes-file release-notes.md
