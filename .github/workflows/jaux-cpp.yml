@@ -6,80 +6,101 @@ on:
       - 'src/**'
       - 'tests/native_extension/**'
       - 'tests/native_extension_consumer.jau'
-      - 'tools/apply_jaux_fix.py'
+      - 'tests/native_mathx/**'
+      - 'tests/native_mathx_consumer.jau'
       - '.github/workflows/jaux-cpp.yml'
   workflow_dispatch:
 
 jobs:
-  cpp-extension-x64:
+  mathx-x64:
     runs-on: windows-latest
-    timeout-minutes: 8
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
       - name: Build Jau x64
         run: |
           cmake -S . -B build -A x64 -DJAU_ENABLE_ASM_FASTOPS=OFF
           cmake --build build --config Release --parallel 2
-      - name: Compile C++ extension object x64
+      - name: Build MathX C++ COFF x64
         shell: pwsh
         run: |
-          cmake -S tests\native_extension -B extbuild -A x64
-          cmake --build extbuild --config Release --parallel 2
-          $obj = Get-ChildItem extbuild -Recurse -Filter cppmath.obj | Select-Object -First 1
-          if (!$obj) { throw 'C++ compiler did not produce cppmath.obj' }
-          New-Item -ItemType Directory -Force extpkg\native\windows-x86_64 | Out-Null
-          Copy-Item tests\native_extension\jau.pkg extpkg\jau.pkg
-          Copy-Item -Recurse tests\native_extension\src extpkg\src
-          Copy-Item $obj.FullName extpkg\native\windows-x86_64\cppmath.obj
-      - name: Pack install parse and link C++ .jaux x64
+          New-Item -ItemType Directory -Force mathsrc | Out-Null
+          Copy-Item tests\native_mathx\mathx.cpp mathsrc\mathx.cpp
+          @'
+          cmake_minimum_required(VERSION 3.16)
+          project(MathX LANGUAGES CXX)
+          add_library(mathx OBJECT mathx.cpp)
+          '@ | Set-Content -Encoding utf8 mathsrc\CMakeLists.txt
+          cmake -S mathsrc -B mathbuild -A x64
+          cmake --build mathbuild --config Release --parallel 2
+          $obj=Get-ChildItem mathbuild -Recurse -Filter mathx.obj | Select-Object -First 1
+          if(!$obj){ throw 'mathx.obj x64 missing' }
+          New-Item -ItemType Directory -Force mathpkg\src,mathpkg\native\windows-x86_64 | Out-Null
+          Copy-Item tests\native_mathx\jau.pkg mathpkg\jau.pkg
+          Copy-Item tests\native_mathx\src\main.jau mathpkg\src\main.jau
+          Copy-Item $obj.FullName mathpkg\native\windows-x86_64\mathx.obj
+      - name: Pack resolve and run MathX x64
         shell: pwsh
         run: |
-          $pm = (Resolve-Path .\build\Release\jaupm.exe).Path
-          $jauc = (Resolve-Path .\build\Release\jauc.exe).Path
-          Push-Location extpkg
-          & $pm pack dist\CppMath-1.0.0.jaux
+          $pm=(Resolve-Path .\build\Release\jaupm.exe).Path
+          $jauc=(Resolve-Path .\build\Release\jauc.exe).Path
+          Push-Location mathpkg
+          & $pm pack dist\MathX-1.0.0.jaux
+          & $pm verify dist\MathX-1.0.0.jaux
           Pop-Location
-          $env:JAU_HOME="$PWD\native-home"
-          & $pm install .\extpkg\dist\CppMath-1.0.0.jaux
-          & $jauc asm tests\native_extension_consumer.jau -o cpp-extension.s --target windows-x86_64
-          & $jauc native tests\native_extension_consumer.jau -o cpp-extension.exe --target windows-x86_64
-          if (!(Test-Path .\cpp-extension.exe)) { throw 'internal linker did not create C++ extension executable' }
-          $p = Start-Process -FilePath .\cpp-extension.exe -PassThru
-          if (!$p.WaitForExit(5000)) { Stop-Process -Id $p.Id -Force; throw 'C++ .jaux x64 executable hung' }
-          if ($p.ExitCode -ne 0) { throw "C++ .jaux x64 executable failed: $($p.ExitCode)" }
+          $env:JAU_HOME="$PWD\math-home64"
+          & $pm install .\mathpkg\dist\MathX-1.0.0.jaux
+          & $jauc asm tests\native_mathx_consumer.jau -o mathx64.s --target windows-x86_64 --debug 2> mathx64-debug.txt
+          if($LASTEXITCODE -ne 0){ Get-Content mathx64-debug.txt; throw 'MathX x64 AOT failed' }
+          if(!(Select-String mathx64-debug.txt -Pattern '\[jauc:symbol\] mx_add' -Quiet)){ Get-Content mathx64-debug.txt; throw 'mx_add x64 not discovered' }
+          if(!(Select-String mathx64.s -Pattern 'call mx_add' -Quiet)){ throw 'AOT x64 did not emit call mx_add' }
+          & $jauc native tests\native_mathx_consumer.jau -o mathx64.exe --target windows-x86_64 --debug
+          if($LASTEXITCODE -ne 0){ throw 'MathX x64 native compile failed' }
+          $out=@(& .\mathx64.exe)
+          if(($out -join ',') -ne '42,42,1024'){ throw "MathX x64 output mismatch: $out" }
 
-  cpp-extension-x86:
+  mathx-x86:
     runs-on: windows-latest
-    timeout-minutes: 8
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
       - name: Build Jau x86
         run: |
           cmake -S . -B build32 -A Win32 -DJAU_ENABLE_ASM_FASTOPS=OFF
           cmake --build build32 --config Release --parallel 2
-      - name: Compile C++ extension object x86
+      - name: Build MathX C++ COFF x86
         shell: pwsh
         run: |
-          cmake -S tests\native_extension -B extbuild32 -A Win32
-          cmake --build extbuild32 --config Release --parallel 2
-          $obj = Get-ChildItem extbuild32 -Recurse -Filter cppmath.obj | Select-Object -First 1
-          if (!$obj) { throw 'C++ compiler did not produce cppmath.obj' }
-          New-Item -ItemType Directory -Force extpkg32\native\windows-x86 | Out-Null
-          Copy-Item tests\native_extension\jau.pkg extpkg32\jau.pkg
-          Copy-Item -Recurse tests\native_extension\src extpkg32\src
-          Copy-Item $obj.FullName extpkg32\native\windows-x86\cppmath.obj
-      - name: Pack install and link C++ .jaux x86
+          New-Item -ItemType Directory -Force mathsrc32 | Out-Null
+          Copy-Item tests\native_mathx\mathx.cpp mathsrc32\mathx.cpp
+          @'
+          cmake_minimum_required(VERSION 3.16)
+          project(MathX LANGUAGES CXX)
+          add_library(mathx OBJECT mathx.cpp)
+          '@ | Set-Content -Encoding utf8 mathsrc32\CMakeLists.txt
+          cmake -S mathsrc32 -B mathbuild32 -A Win32
+          cmake --build mathbuild32 --config Release --parallel 2
+          $obj=Get-ChildItem mathbuild32 -Recurse -Filter mathx.obj | Select-Object -First 1
+          if(!$obj){ throw 'mathx.obj x86 missing' }
+          New-Item -ItemType Directory -Force mathpkg32\src,mathpkg32\native\windows-x86 | Out-Null
+          Copy-Item tests\native_mathx\jau.pkg mathpkg32\jau.pkg
+          Copy-Item tests\native_mathx\src\main.jau mathpkg32\src\main.jau
+          Copy-Item $obj.FullName mathpkg32\native\windows-x86\mathx.obj
+      - name: Pack resolve and run MathX x86
         shell: pwsh
         run: |
-          $pm = (Resolve-Path .\build32\Release\jaupm.exe).Path
-          $jauc = (Resolve-Path .\build32\Release\jauc.exe).Path
-          Push-Location extpkg32
-          & $pm pack dist\CppMath-1.0.0.jaux
+          $pm=(Resolve-Path .\build32\Release\jaupm.exe).Path
+          $jauc=(Resolve-Path .\build32\Release\jauc.exe).Path
+          Push-Location mathpkg32
+          & $pm pack dist\MathX-1.0.0.jaux
+          & $pm verify dist\MathX-1.0.0.jaux
           Pop-Location
-          $env:JAU_HOME="$PWD\native-home32"
-          & $pm install .\extpkg32\dist\CppMath-1.0.0.jaux
-          & $jauc native tests\native_extension_consumer.jau -o cpp-extension32.exe --target windows-x86
-          if (!(Test-Path .\cpp-extension32.exe)) { throw 'internal linker did not create C++ extension executable' }
-          $p = Start-Process -FilePath .\cpp-extension32.exe -PassThru
-          if (!$p.WaitForExit(5000)) { Stop-Process -Id $p.Id -Force; throw 'C++ .jaux x86 executable hung' }
-          if ($p.ExitCode -ne 0) { throw "C++ .jaux x86 extension executable failed: $($p.ExitCode)" }
+          $env:JAU_HOME="$PWD\math-home32"
+          & $pm install .\mathpkg32\dist\MathX-1.0.0.jaux
+          & $jauc asm tests\native_mathx_consumer.jau -o mathx32.s --target windows-x86 --debug 2> mathx32-debug.txt
+          if($LASTEXITCODE -ne 0){ Get-Content mathx32-debug.txt; throw 'MathX x86 AOT failed' }
+          if(!(Select-String mathx32-debug.txt -Pattern '\[jauc:symbol\] _?mx_add' -Quiet)){ Get-Content mathx32-debug.txt; throw 'mx_add x86 not discovered' }
+          & $jauc native tests\native_mathx_consumer.jau -o mathx32.exe --target windows-x86 --debug
+          if($LASTEXITCODE -ne 0){ throw 'MathX x86 native compile failed' }
+          $out=@(& .\mathx32.exe)
+          if(($out -join ',') -ne '42,42,1024'){ throw "MathX x86 output mismatch: $out" }
