@@ -15,7 +15,9 @@ jobs:
         with:
           fetch-depth: 0
       - name: Apply 0.8.1 patch
-        run: python tools/patch_v081.py
+        run: |
+          python tools/patch_v081.py
+          python tools/patch_v081_aliasfix.py
       - name: Build Jau x64
         shell: pwsh
         run: |
@@ -72,12 +74,11 @@ jobs:
           if(($out -join ',') -ne '42,42,1024'){ throw "MathX native mismatch: $out" }
       - name: Existing regression suite
         shell: pwsh
-        run: |
-          ctest --test-dir build -C Release --output-on-failure
+        run: ctest --test-dir build -C Release --output-on-failure
       - name: Commit validated 0.8.1
         shell: pwsh
         run: |
-          git rm tools/patch_v081.py .github/workflows/v081-land.yml
+          git rm tools/patch_v081.py tools/patch_v081_aliasfix.py .github/workflows/v081-land.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add CMakeLists.txt src tests docs
