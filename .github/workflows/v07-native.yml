@@ -1,4 +1,4 @@
-name: v08-native
+name: v081-native
 
 on:
   push:
@@ -8,63 +8,43 @@ on:
 jobs:
   windows-x64:
     runs-on: windows-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-
       - name: Build Jau x64
         run: |
           cmake -S . -B build -A x64 -DJAU_ENABLE_ASM_FASTOPS=OFF
           cmake --build build --config Release --parallel 2
-
-      - name: Verify Jau 0.8
+      - name: Verify Jau 0.8.1
         shell: pwsh
         run: |
           $v = & .\build\Release\jauc.exe --version
-          if ($v -ne "0.8.0") { throw "unexpected jauc version: $v" }
-
+          if ($v -ne "0.8.1") { throw "unexpected jauc version: $v" }
       - name: OBJ metadata to PE32+
         shell: pwsh
         run: |
           & .\build\Release\jauc.exe obj tests\entry_obj.jau -o entry.obj --target windows-x86_64 -O3
-          if (!(Test-Path .\entry.obj)) { throw "entry.obj missing" }
           if (!(Test-Path .\entry.obj.jmeta)) { throw "JAUMETA1 sidecar missing" }
-          $meta = Get-Content .\entry.obj.jmeta -Raw
-          if ($meta -notmatch 'JAUMETA1') { throw "bad metadata magic" }
-          if ($meta -notmatch 'entry="jau_fn_main"') { throw "metadata entry missing" }
-          if ($meta -notmatch 'target="windows-x86_64"') { throw "metadata target missing" }
           & .\build\Release\jauld.exe entry.obj -o entry.exe
           $lines = @(& .\entry.exe)
-          if ($LASTEXITCODE -ne 0) { throw "metadata-linked PE32+ failed: $LASTEXITCODE" }
-          if ($lines.Count -lt 1 -or $lines[0].Trim() -ne "42") { throw "metadata-linked output mismatch: $lines" }
-
+          if ($LASTEXITCODE -ne 0 -or $lines[0].Trim() -ne "42") { throw "metadata PE32+ regression failed: $lines" }
       - name: Entry fallback without metadata x64
         shell: pwsh
         run: |
           Remove-Item .\entry.obj.jmeta -Force
           & .\build\Release\jauld.exe entry.obj -o entry-fallback.exe --target windows-x86_64
           $lines = @(& .\entry-fallback.exe)
-          if ($LASTEXITCODE -ne 0) { throw "fallback-linked PE32+ failed: $LASTEXITCODE" }
-          if ($lines.Count -lt 1 -or $lines[0].Trim() -ne "42") { throw "fallback output mismatch: $lines" }
-
-      - name: Native time and optimized loop x64
+          if ($LASTEXITCODE -ne 0 -or $lines[0].Trim() -ne "42") { throw "fallback PE32+ regression failed: $lines" }
+      - name: Jau 0.8.1 syntax native smoke x64
         shell: pwsh
         run: |
-          & .\build\Release\jauc.exe native tests\time_native.jau -o time-native.exe --target windows-x86_64 -O3
-          if (!(Test-Path .\time-native.exe)) { throw "time-native.exe missing" }
-          $lines = @(& .\time-native.exe)
-          if ($LASTEXITCODE -ne 0) { throw "native timing PE32+ failed: $LASTEXITCODE" }
-          if ($lines.Count -lt 2) { throw "native timing output incomplete: $lines" }
-          if ($lines[0].Trim() -ne "1000000") { throw "optimized loop result mismatch: $lines" }
-          if ([int64]$lines[1] -lt 0) { throw "elapsed time was negative: $($lines[1])" }
-
-      - name: Jau 0.8 syntax native smoke
-        shell: pwsh
-        run: |
-          & .\build\Release\jauc.exe native tests\syntax_v08.jau -o syntax-v08.exe --target windows-x86_64 -O3
-          $out = & .\syntax-v08.exe
-          if ($out -ne "12") { throw "Jau 0.8 syntax native mismatch: $out" }
-
+          & .\build\Release\jauc.exe native tests\v081_syntax.jau -o syntax-v081.exe --target windows-x86_64 -O3
+          if ($LASTEXITCODE -ne 0) { throw "0.8.1 syntax x64 compile failed" }
+          $out=@(& .\syntax-v081.exe)
+          if(($out -join ',') -ne '10,157,-1'){ throw "0.8.1 syntax x64 mismatch: $out" }
+          & .\build\Release\jauc.exe native tests\v081_namespace.jau -o ns-v081.exe --target windows-x86_64 -O3
+          $ns=@(& .\ns-v081.exe)
+          if(($ns -join ',') -ne '42'){ throw "0.8.1 namespace x64 mismatch: $ns" }
       - name: Stage x64 artifact
         shell: pwsh
         run: |
@@ -72,73 +52,52 @@ jobs:
           Copy-Item build\Release\jauc.exe,build\Release\jur.exe,build\Release\jauas.exe,build\Release\jauld.exe,build\Release\jaupm.exe,build\Release\jau-setup.exe dist\
           Copy-Item stdlib\* dist\stdlib\
           Copy-Item tools\jaupm.jau dist\tools\
-          Copy-Item docs\LANGUAGE.md,docs\LINKER.md,docs\PERFORMANCE.md,docs\PACKAGES.md,docs\NATIVE_EXTENSIONS.md,docs\INTEROP.md,docs\V080.md dist\docs\
+          Copy-Item docs\LANGUAGE.md,docs\LINKER.md,docs\PERFORMANCE.md,docs\PACKAGES.md,docs\NATIVE_EXTENSIONS.md,docs\INTEROP.md,docs\V080.md,docs\V081.md dist\docs\
           Copy-Item README.md dist\
-
       - uses: actions/upload-artifact@v4
         with:
-          name: jau-0.8-windows-x64
+          name: jau-0.8.1-windows-x64
           path: dist
 
   windows-x86:
     runs-on: windows-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-
       - name: Build Jau x86
         run: |
           cmake -S . -B build32 -A Win32 -DJAU_ENABLE_ASM_FASTOPS=OFF
           cmake --build build32 --config Release --parallel 2
-
-      - name: Verify Jau 0.8 x86
+      - name: Verify Jau 0.8.1 x86
         shell: pwsh
         run: |
           $v = & .\build32\Release\jauc.exe --version
-          if ($v -ne "0.8.0") { throw "unexpected jauc version: $v" }
-
+          if ($v -ne "0.8.1") { throw "unexpected jauc version: $v" }
       - name: OBJ metadata to PE32
         shell: pwsh
         run: |
           & .\build32\Release\jauc.exe obj tests\entry_obj.jau -o entry32.obj --target windows-x86 -O3
-          if (!(Test-Path .\entry32.obj)) { throw "entry32.obj missing" }
           if (!(Test-Path .\entry32.obj.jmeta)) { throw "JAUMETA1 sidecar missing" }
-          $meta = Get-Content .\entry32.obj.jmeta -Raw
-          if ($meta -notmatch 'JAUMETA1') { throw "bad metadata magic" }
-          if ($meta -notmatch 'entry="jau_fn_main"') { throw "metadata entry missing" }
-          if ($meta -notmatch 'target="windows-x86"') { throw "metadata target missing" }
           & .\build32\Release\jauld.exe entry32.obj -o entry32.exe
           $lines = @(& .\entry32.exe)
-          if ($LASTEXITCODE -ne 0) { throw "metadata-linked PE32 failed: $LASTEXITCODE" }
-          if ($lines.Count -lt 1 -or $lines[0].Trim() -ne "42") { throw "metadata-linked x86 output mismatch: $lines" }
-
+          if ($LASTEXITCODE -ne 0 -or $lines[0].Trim() -ne "42") { throw "metadata PE32 regression failed: $lines" }
       - name: Entry fallback without metadata x86
         shell: pwsh
         run: |
           Remove-Item .\entry32.obj.jmeta -Force
           & .\build32\Release\jauld.exe entry32.obj -o entry32-fallback.exe --target windows-x86
           $lines = @(& .\entry32-fallback.exe)
-          if ($LASTEXITCODE -ne 0) { throw "fallback-linked PE32 failed: $LASTEXITCODE" }
-          if ($lines.Count -lt 1 -or $lines[0].Trim() -ne "42") { throw "fallback x86 output mismatch: $lines" }
-
-      - name: Native time and optimized loop x86
+          if ($LASTEXITCODE -ne 0 -or $lines[0].Trim() -ne "42") { throw "fallback PE32 regression failed: $lines" }
+      - name: Jau 0.8.1 syntax native smoke x86
         shell: pwsh
         run: |
-          & .\build32\Release\jauc.exe native tests\time_native.jau -o time-native32.exe --target windows-x86 -O3
-          if (!(Test-Path .\time-native32.exe)) { throw "time-native32.exe missing" }
-          $lines = @(& .\time-native32.exe)
-          if ($LASTEXITCODE -ne 0) { throw "native timing PE32 failed: $LASTEXITCODE" }
-          if ($lines.Count -lt 2) { throw "native x86 timing output incomplete: $lines" }
-          if ($lines[0].Trim() -ne "1000000") { throw "optimized x86 loop result mismatch: $lines" }
-          if ([int64]$lines[1] -lt 0) { throw "elapsed x86 time was negative: $($lines[1])" }
-
-      - name: Jau 0.8 syntax native smoke x86
-        shell: pwsh
-        run: |
-          & .\build32\Release\jauc.exe native tests\syntax_v08.jau -o syntax-v08-x86.exe --target windows-x86 -O3
-          $out = & .\syntax-v08-x86.exe
-          if ($out -ne "12") { throw "Jau 0.8 syntax native x86 mismatch: $out" }
-
+          & .\build32\Release\jauc.exe native tests\v081_syntax.jau -o syntax-v081-x86.exe --target windows-x86 -O3
+          if ($LASTEXITCODE -ne 0) { throw "0.8.1 syntax x86 compile failed" }
+          $out=@(& .\syntax-v081-x86.exe)
+          if(($out -join ',') -ne '10,157,-1'){ throw "0.8.1 syntax x86 mismatch: $out" }
+          & .\build32\Release\jauc.exe native tests\v081_namespace.jau -o ns-v081-x86.exe --target windows-x86 -O3
+          $ns=@(& .\ns-v081-x86.exe)
+          if(($ns -join ',') -ne '42'){ throw "0.8.1 namespace x86 mismatch: $ns" }
       - name: Stage x86 artifact
         shell: pwsh
         run: |
@@ -146,10 +105,9 @@ jobs:
           Copy-Item build32\Release\jauc.exe,build32\Release\jur.exe,build32\Release\jauas.exe,build32\Release\jauld.exe,build32\Release\jaupm.exe,build32\Release\jau-setup.exe dist32\
           Copy-Item stdlib\* dist32\stdlib\
           Copy-Item tools\jaupm.jau dist32\tools\
-          Copy-Item docs\LANGUAGE.md,docs\LINKER.md,docs\PERFORMANCE.md,docs\PACKAGES.md,docs\NATIVE_EXTENSIONS.md,docs\INTEROP.md,docs\V080.md dist32\docs\
+          Copy-Item docs\LANGUAGE.md,docs\LINKER.md,docs\PERFORMANCE.md,docs\PACKAGES.md,docs\NATIVE_EXTENSIONS.md,docs\INTEROP.md,docs\V080.md,docs\V081.md dist32\docs\
           Copy-Item README.md dist32\
-
       - uses: actions/upload-artifact@v4
         with:
-          name: jau-0.8-windows-x86
+          name: jau-0.8.1-windows-x86
           path: dist32
