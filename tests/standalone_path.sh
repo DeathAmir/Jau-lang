@@ -8,4 +8,4 @@ cp "$JAUPM" "$TMP/bin/jaupm"
 chmod +x "$TMP/bin/jaupm"
 cd "$TMP/work"
 OUT="$(PATH="$TMP/bin:$PATH" JAU_HOME="$TMP/home" jaupm version)"
-[ "$OUT" = "JauPM 0.6" ]
+[ "$OUT" = "JauPM 0.7" ]
