@@ -17,6 +17,11 @@ new = r'''def rep(s,a,b,label):
         y = '<<out.size()<<" bytes, "<<nsec<<" sections"<<(dll_mode?std::string(", exports=")+std::to_string(exports.size()):std::string(", entry=")+entry_names.front())<<")\\n";return 0;'
         if x in s:
             return s.replace(x,y,1)
+    if label == 'jauld DLL help':
+        x = '[--subsystem console|windows]\\n\\n--system-lib'
+        y = '[--subsystem console|windows] [--dll --export public[=internal]]\\n\\n--system-lib'
+        if x in s:
+            return s.replace(x,y,1)
     raise SystemExit('anchor not found: '+label)
 '''
 if old not in src:
