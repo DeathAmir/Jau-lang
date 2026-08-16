@@ -35,6 +35,23 @@ func package_main(name) {
     return path_join(package_dir(name), "main.jau");
 }
 
+func package_runtime(name) {
+    let dir = package_dir(name);
+    if (platform() == "windows") {
+        let dll = path_join(dir, "runtime.dll");
+        if (file_exists(dll)) { return dll; }
+    }
+    if (platform() == "linux") {
+        let so = path_join(dir, "runtime.so");
+        if (file_exists(so)) { return so; }
+    }
+    return "";
+}
+
+func package_has_runtime(name) {
+    return package_runtime(name) != "";
+}
+
 func package_installed(name) {
     if (file_exists(package_archive(name))) { return true; }
     return file_exists(package_main(name));
