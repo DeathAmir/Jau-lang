@@ -1,0 +1,7 @@
+name=v090
+source=tests/v090_core.jau
+type=exe
+target=windows-x86_64
+output=build-jaum/{name}-{target}{ext}
+optimize=0
+subsystem=console

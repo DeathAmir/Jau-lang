@@ -10,6 +10,14 @@ struct CompileOptions {
     std::vector<std::string> import_paths;
     std::vector<std::string> native_inputs;
     std::vector<std::string> native_symbols;
+    // Native linker requests. system_libs contains logical names (user32,
+    // pthread, m, ...) or explicit library paths. native_imports uses
+    // symbol=dll syntax for deterministic Windows PE imports.
+    std::vector<std::string> system_libs;
+    std::vector<std::string> native_imports;
+    std::vector<std::string> exports;
+    std::string subsystem = "console";
+    bool shared = false;
     bool debug = false;
 };
 struct Result {

@@ -93,7 +93,16 @@ class AOT {
         if(e->k==Expr::Lit){
             if(auto p=std::get_if<int64_t>(&e->v.data)){o<<"  mov "<<(is64?"rax":"eax")<<", "<<*p<<"\n";push(is64?"rax":"eax");return;}
             if(auto p=std::get_if<bool>(&e->v.data)){o<<"  mov eax, "<<(*p?1:0)<<"\n";push(is64?"rax":"eax");return;}
-            throw Error("AOT supports integer/bool values; strings/arrays remain VM-only");
+            if(auto p=std::get_if<std::string>(&e->v.data)){
+                // Native string literals are emitted in .rodata and passed as a
+                // borrowed const char*. This makes C ABI calls such as Win32 A
+                // APIs practical without pretending Jau has a native owned-string ABI.
+                auto lab=intern_string(*p);
+                if(is64)o<<"  lea rax, [rip+"<<lab<<"]\n";
+                else o<<"  mov eax, OFFSET FLAT:"<<lab<<"\n";
+                push(is64?"rax":"eax");return;
+            }
+            throw Error("AOT supports integer/bool and string-literal pointer values; dynamic strings/arrays remain VM-only");
         }
         if(e->k==Expr::Var){load_var(e->text);return;}
         if(e->k==Expr::Assign){
@@ -202,7 +211,9 @@ public:
         // work before native codegen. Native AOT remains deliberately unoptimized
         // until transformations are proven semantics-preserving by tests.
         for(auto&s:ast)if(s->k==Stmt::FuncS){if(s->external)externs.insert(s->name);else funcs[s->name]=s.get();}
-        o<<".intel_syntax noprefix\n# DeathAmir Jau @ DeathAmir 2026 (C)\n.section .rodata\nfmt_i: .asciz \""<<(is64?"%lld":"%d")<<"\\n\"\njau_copyright: .asciz \"DeathAmir Jau @ DeathAmir 2026 (C)\"\n.text\n.extern printf\n.extern puts\n";
+        // Generated assembly is a user artifact. Keep tool branding in CLI
+        // stderr only; never inject it into source/object/executable output.
+        o<<".intel_syntax noprefix\n.section .rodata\nfmt_i: .asciz \""<<(is64?"%lld":"%d")<<"\\n\"\n.text\n.extern printf\n.extern puts\n";
         for(auto&n:externs)o<<".extern "<<foreign_sym(n)<<"\n";
         for(auto&s:ast)if(s->k==Stmt::FuncS&&!s->external)emit_func(s.get());
         if(!library){
@@ -242,6 +253,17 @@ Result native_build(const std::string&input,const std::string&output,const std::
     else if(target=="windows-x86")cc=(cpp?"i686-w64-mingw32-g++":"i686-w64-mingw32-gcc")+std::string(" -no-pie ")+shell_quote(tmp.string());
     else return {false,"unknown target: "+target};
     for(auto&x:o.native_inputs)cc+=" "+shell_quote(x);
+    // Linux uses the host/system linker for final ELF generation. Logical
+    // library names become -lfoo; explicit .a/.so paths are passed verbatim.
+    for(auto lib:o.system_libs){
+        auto ext=lower_copy(fs::path(lib).extension().string());
+        if(fs::exists(lib)||ext==".a"||ext==".so"||ext==".dylib")cc+=" "+shell_quote(lib);
+        else{
+            if(lib.rfind("lib",0)==0)lib=lib.substr(3);
+            auto q=lib.find('.');if(q!=std::string::npos)lib=lib.substr(0,q);
+            cc+=" -l"+lib;
+        }
+    }
     std::string final_out=output;if(target.rfind("windows-",0)==0&&lower_copy(fs::path(final_out).extension().string())!=".exe")final_out+=".exe";
     cc+=" -o "+shell_quote(final_out);
     int rc=std::system(cc.c_str());if(rc!=0)return {false,"native linker failed; install the target C/C++ toolchain. command: "+cc};return {true,"native executable built: "+final_out};
@@ -259,6 +281,6 @@ Result run_embedded_executable(const std::string&exe,const std::vector<std::stri
     std::ifstream in(exe,std::ios::binary);if(!in)throw Error("cannot open executable");in.seekg(0,std::ios::end);auto end=in.tellg();if(end<(std::streamoff)16)throw Error("no embedded Jau payload");in.seekg(end-(std::streamoff)16);uint64_t n=0;char magic[8];in.read((char*)&n,8);in.read(magic,8);if(std::memcmp(magic,"JAUEXEC1",8))throw Error("no embedded Jau payload");if(n>(uint64_t)(end-(std::streamoff)16))throw Error("corrupt embedded payload");in.seekg(end-(std::streamoff)16-(std::streamoff)n);std::vector<char> data((size_t)n);in.read(data.data(),(std::streamsize)n);
     fs::path tmp=fs::temp_directory_path()/("jau_embedded_"+std::to_string(fnv1a64(exe))+".jbc");{std::ofstream o2(tmp,std::ios::binary);o2.write(data.data(),(std::streamsize)data.size());}auto rr=run_bytecode(tmp.string(),args);std::error_code ec;fs::remove(tmp,ec);return rr;
 }catch(const std::exception&e){return {false,e.what()};}}
-std::string version(){return "0.8.2";}
+std::string version(){return "0.9.0";}
 std::string copyright_notice(){return "DeathAmir Jau @ DeathAmir 2026 (C)";}
 }

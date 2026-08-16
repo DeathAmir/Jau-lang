@@ -1,0 +1,5 @@
+func main() {
+    let x = 20 + 22;
+    print(x);
+    return 0;
+}

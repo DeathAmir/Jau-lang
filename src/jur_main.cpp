@@ -27,14 +27,19 @@ static std::string current_executable_path(const char* argv0) {
 }
 
 int main(int argc, char** argv) {
-    std::cerr << jau::copyright_notice() << "\n";
+    const auto image = current_executable_path(argv[0]);
+    auto stem = fs::path(image).stem().string();
+    for(char& c:stem)c=(char)std::tolower((unsigned char)c);
+    // A bundled user application is not a Jau command-line tool. Do not inject
+    // tool branding into its stderr. jur and the bundled jaupm tool keep it.
+    if(stem=="jur"||stem=="jaupm") std::cerr << jau::copyright_notice() << "\n";
     std::vector<std::string> embedded_args;
     for (int i = 1; i < argc; ++i) embedded_args.push_back(argv[i]);
 
     // argv[0] may contain only "jaupm" when the standalone executable is
     // launched through PATH. Resolve the real process image before reading the
     // embedded JAUEXEC payload.
-    auto embedded = jau::run_embedded_executable(current_executable_path(argv[0]), embedded_args);
+    auto embedded = jau::run_embedded_executable(image, embedded_args);
     if (embedded.ok) return 0;
     if (embedded.message != "no embedded Jau payload") {
         std::cerr << "jur: " << embedded.message << "\n";
