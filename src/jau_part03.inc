@@ -128,6 +128,7 @@ class AOT {
         else if(s->k==Stmt::VarS){ex(s->expr.get());pop(is64?"rax":"eax");o<<"  mov "<<(is64?"QWORD PTR [rbp-":"DWORD PTR [ebp-")<<slot(s->name)<<"], "<<(is64?"rax":"eax")<<"\n";}
         else if(s->k==Stmt::IfS){std::string el=L(),en=L();ex(s->cond.get());pop(is64?"rax":"eax");o<<"  cmp "<<(is64?"rax":"eax")<<",0\n  je "<<el<<"\n";for(auto&x:s->body)st(x.get());o<<"  jmp "<<en<<"\n"<<el<<":\n";for(auto&x:s->else_body)st(x.get());o<<en<<":\n";}
         else if(s->k==Stmt::WhileS){std::string a=L(),b=L();c.continues.push_back(a);c.breaks.push_back(b);o<<a<<":\n";ex(s->cond.get());pop(is64?"rax":"eax");o<<"  cmp "<<(is64?"rax":"eax")<<",0\n  je "<<b<<"\n";for(auto&x:s->body)st(x.get());o<<"  jmp "<<a<<"\n"<<b<<":\n";c.continues.pop_back();c.breaks.pop_back();}
+        else if(s->k==Stmt::ForS){if(s->init)st(s->init.get());std::string a=L(),step=L(),b=L();c.continues.push_back(step);c.breaks.push_back(b);o<<a<<":\n";ex(s->cond.get());pop(is64?"rax":"eax");o<<"  cmp "<<(is64?"rax":"eax")<<",0\n  je "<<b<<"\n";for(auto&x:s->body)st(x.get());o<<step<<":\n";if(s->step){ex(s->step.get());o<<"  add "<<(is64?"rsp,8":"esp,4")<<"\n";}o<<"  jmp "<<a<<"\n"<<b<<":\n";c.continues.pop_back();c.breaks.pop_back();}
         else if(s->k==Stmt::Block){for(auto&x:s->body)st(x.get());}
         else if(s->k==Stmt::ReturnS){if(s->expr){ex(s->expr.get());pop(is64?"rax":"eax");}else o<<"  xor eax,eax\n";o<<"  jmp "<<c.end<<"\n";}
         else if(s->k==Stmt::BreakS){if(c.breaks.empty())throw Error("break outside AOT loop");o<<"  jmp "<<c.breaks.back()<<"\n";}

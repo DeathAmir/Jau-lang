@@ -1,5 +1,6 @@
         if(eat(TK::If)){auto s=std::make_unique<Stmt>();s->k=Stmt::IfS;need(TK::LParen,"expected (");s->cond=expr();need(TK::RParen,"expected )");s->body=block_body();if(eat(TK::Else)){if(at(TK::If)){s->else_body.push_back(stmt());}else s->else_body=block_body();}return s;}
         if(eat(TK::While)){auto s=std::make_unique<Stmt>();s->k=Stmt::WhileS;need(TK::LParen,"expected (");s->cond=expr();need(TK::RParen,"expected )");s->body=block_body();return s;}
+        if(eat(TK::For)){auto s=std::make_unique<Stmt>();s->k=Stmt::ForS;need(TK::LParen,"expected ( after for");if(eat(TK::Semi)){}else if(at(TK::Let)||at(TK::Const)){bool con=false;if(eat(TK::Const))con=true;else need(TK::Let,"expected var/let/const");auto q=std::make_unique<Stmt>();q->k=Stmt::VarS;q->constant=con;q->name=need(TK::Id,"expected for variable").text;skip_type_annotation();if(eat(TK::Eq))q->expr=expr();else{q->expr=std::make_unique<Expr>();q->expr->k=Expr::Lit;}need(TK::Semi,"expected ; after for initializer");s->init=std::move(q);}else{auto q=std::make_unique<Stmt>();q->k=Stmt::ExprS;q->expr=expr();need(TK::Semi,"expected ; after for initializer");s->init=std::move(q);}if(at(TK::Semi)){s->cond=std::make_unique<Expr>();s->cond->k=Expr::Lit;s->cond->v=true;}else s->cond=expr();need(TK::Semi,"expected ; after for condition");if(!at(TK::RParen))s->step=expr();need(TK::RParen,"expected ) after for clauses");s->body=block_body();return s;}
         if(eat(TK::Return)){auto s=std::make_unique<Stmt>();s->k=Stmt::ReturnS;if(!at(TK::Semi)&&!at(TK::RBrace))s->expr=expr();eat(TK::Semi);return s;}
         if(eat(TK::Break)){auto s=std::make_unique<Stmt>();s->k=Stmt::BreakS;eat(TK::Semi);return s;}
         if(eat(TK::Continue)){auto s=std::make_unique<Stmt>();s->k=Stmt::ContinueS;eat(TK::Semi);return s;}
@@ -47,7 +48,7 @@ static void optimize_expr(Expr*e){
     if(e->text=="*"&&(lit_i(e->a.get(),0)||lit_i(e->b.get(),0))){become_lit(e,Value((int64_t)0));return;}
 }
 static void optimize_stmts(std::vector<std::unique_ptr<Stmt>>&v){
-    for(auto&s:v){optimize_expr(s->expr.get());optimize_expr(s->cond.get());optimize_stmts(s->body);optimize_stmts(s->else_body);
+    for(auto&s:v){optimize_expr(s->expr.get());optimize_expr(s->cond.get());optimize_expr(s->step.get());if(s->init)optimize_expr(s->init->expr.get());optimize_stmts(s->body);optimize_stmts(s->else_body);
         if(s->k==Stmt::IfS&&s->cond&&s->cond->k==Expr::Lit){bool take=s->cond->v.truthy();s->k=Stmt::Block;s->body=take?std::move(s->body):std::move(s->else_body);s->else_body.clear();s->cond.reset();}
         else if(s->k==Stmt::WhileS&&s->cond&&s->cond->k==Expr::Lit&&!s->cond->v.truthy()){s->k=Stmt::Block;s->body.clear();s->cond.reset();}
     }
