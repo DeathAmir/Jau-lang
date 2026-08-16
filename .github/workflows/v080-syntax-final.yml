@@ -1,0 +1,54 @@
+name: v080-syntax-final
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/v080-syntax-final.yml'
+permissions:
+  contents: write
+jobs:
+  syntax:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply syntax patch
+        run: python .github/scripts/patch_v080_syntax.py
+      - name: Remove temporary migration files
+        shell: pwsh
+        run: |
+          Remove-Item .github\scripts\patch_v080_syntax.py -Force
+          Remove-Item .github\workflows\v080-syntax-upgrade.yml -Force -ErrorAction SilentlyContinue
+          Remove-Item .github\workflows\v080-syntax-final.yml -Force
+      - name: Build x64
+        run: |
+          cmake -S . -B build -A x64 -DJAU_ENABLE_ASM_FASTOPS=OFF
+          cmake --build build --config Release --parallel 2
+      - name: Test VM and checker
+        shell: pwsh
+        run: |
+          $out = & .\build\Release\jauc.exe run tests\syntax_v08.jau
+          if ($out -ne '12') { throw "VM syntax result mismatch: $out" }
+          & .\build\Release\jauc.exe check tests\syntax_v08.jau
+          if ($LASTEXITCODE -ne 0) { throw 'jauc check failed' }
+      - name: Test Windows native AOT
+        shell: pwsh
+        run: |
+          & .\build\Release\jauc.exe asm tests\syntax_v08.jau -o syntax-v08.s --target windows-x86_64
+          if ($LASTEXITCODE -ne 0) { throw 'jauc asm failed' }
+          & .\build\Release\jauc.exe native tests\syntax_v08.jau -o syntax-v08.exe --target windows-x86_64
+          if ($LASTEXITCODE -ne 0) { throw 'jauc native failed' }
+          $out = & .\syntax-v08.exe
+          if ($out -ne '12') { throw "native syntax result mismatch: $out" }
+      - name: Existing regression suite
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Commit syntax upgrade
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Expand Jau 0.8 syntax with for loops updates aliases and block comments"
+          git push origin HEAD:main
