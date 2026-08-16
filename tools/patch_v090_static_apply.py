@@ -12,9 +12,12 @@ if needle not in s:
     raise SystemExit('static archive function not found after patch')
 s=s.replace(needle,'static void write_binary(const fs::path&p,const std::string&data);\n'+needle,1)
 
-# ar members are padded with one actual LF byte. The raw Python patch text had
-# preserved two backslashes, which would create a C++ multi-character literal.
+# ar format uses literal LF bytes in the global signature, member-header
+# terminator, and odd-byte padding. Normalize the raw-patch escaping so the C++
+# writer emits bytes 0x0a rather than the two characters backslash+n.
 s=s.replace(r"out.push_back('\\n');", r"out.push_back('\n');")
+s=s.replace(r'+"`\\n";', r'+"`\n";')
+s=s.replace(r'std::string archive="!<arch>\\n";', r'std::string archive="!<arch>\n";')
 p.write_text(s,encoding='utf-8')
 
 # The shared validation patch created this source in its runner, but the old
