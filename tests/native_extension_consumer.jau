@@ -1,4 +1,5 @@
 import "pkg:CppMath"
-let answer = CppMath.mul[6, 7];
+/* Jau 0.8 native package regression */
+var answer:int = CppMath.mul[6, 7];
 while (answer != 42) {
 }
