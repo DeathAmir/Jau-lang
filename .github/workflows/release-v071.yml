@@ -1,0 +1,54 @@
+name: release-v071
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-v071.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Windows x64
+        shell: pwsh
+        run: |
+          cmake -S . -B build -A x64 -DJAU_ENABLE_ASM_FASTOPS=OFF
+          cmake --build build --config Release --parallel 2
+          if ((& .\build\Release\jauc.exe --version) -ne '0.7.1') { throw 'expected Jau 0.7.1' }
+
+      - name: Build Windows x86
+        shell: pwsh
+        run: |
+          cmake -S . -B build32 -A Win32 -DJAU_ENABLE_ASM_FASTOPS=OFF
+          cmake --build build32 --config Release --parallel 2
+
+      - name: Stage archives
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist64\stdlib,dist64\tools,dist64\bootstrap,dist64\packages | Out-Null
+          New-Item -ItemType Directory -Force dist32\stdlib,dist32\tools,dist32\bootstrap,dist32\packages | Out-Null
+          Copy-Item build\Release\jauc.exe,build\Release\jur.exe,build\Release\jauas.exe,build\Release\jauld.exe,build\Release\jau-setup.exe,build\Release\jaupm.exe dist64\
+          Copy-Item build32\Release\jauc.exe,build32\Release\jur.exe,build32\Release\jauas.exe,build32\Release\jauld.exe,build32\Release\jau-setup.exe,build32\Release\jaupm.exe dist32\
+          Copy-Item stdlib\* dist64\stdlib\
+          Copy-Item stdlib\* dist32\stdlib\
+          Copy-Item tools\jaupm.jau dist64\tools\
+          Copy-Item tools\jaupm.jau dist32\tools\
+          Copy-Item bootstrap\jauc_stage1.jau dist64\bootstrap\
+          Copy-Item bootstrap\jauc_stage1.jau dist32\bootstrap\
+          Copy-Item -Recurse packages\JTTP dist64\packages\
+          Copy-Item -Recurse packages\JTTP dist32\packages\
+          Compress-Archive -Path dist64\* -DestinationPath Jau-0.7.1-windows-x64.zip
+          Compress-Archive -Path dist32\* -DestinationPath Jau-0.7.1-windows-x86.zip
+
+      - name: Create release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create v0.7.1 Jau-0.7.1-windows-x64.zip Jau-0.7.1-windows-x86.zip --target $env:GITHUB_SHA --title "Jau 0.7.1 - Native Package Fix" --generate-notes
