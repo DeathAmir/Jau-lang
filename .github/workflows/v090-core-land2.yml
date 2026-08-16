@@ -56,7 +56,7 @@ jobs:
           if($LASTEXITCODE -ne 0){Get-Content systemlib.txt;throw 'user32 system-lib failed'}
           if((@(& .\systemlib.exe) -join ',') -ne '1'){throw 'user32 executable failed'}
           if(!(Select-String systemlib.txt -Pattern '[jauc:system-lib] user32' -SimpleMatch -Quiet)){throw 'system-lib not propagated'}
-          & .\build\Release\jauc.exe native winprobe.jau -o explicit.exe --target windows-x86_64 --link metric64\metric.obj --import GetSystemMetrics=user32.dll
+          & .\build\Release\jauc.exe native winprobe.jau -o explicit.exe --target windows-x86_64 --link metric64\metric.obj --import GetSystemMetrics=user32.dll --import MessageBoxA=user32.dll
           if($LASTEXITCODE -ne 0){throw 'explicit import failed'}
           if((@(& .\explicit.exe) -join ',') -ne '1'){throw 'explicit import executable failed'}
       - name: Package system library propagation
