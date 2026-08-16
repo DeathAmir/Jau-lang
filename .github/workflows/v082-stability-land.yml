@@ -31,15 +31,15 @@ jobs:
           cmake --build build --config Release --parallel 2
           $v = & .\build\Release\jauc.exe --version 2> banner-jauc.txt
           if ($v -ne '0.8.2') { throw "unexpected version: $v" }
-          if (!(Select-String banner-jauc.txt -SimpleMatch 'DeathAmir Jau @ DeathAmir 2026 (C)' -Quiet)) { throw 'jauc copyright banner missing' }
+          if (!(Select-String -Path banner-jauc.txt -Pattern 'DeathAmir Jau @ DeathAmir 2026 (C)' -SimpleMatch -Quiet)) { throw 'jauc copyright banner missing' }
       - name: Native main entry x64
         shell: pwsh
         run: |
           $jauc=(Resolve-Path .\build\Release\jauc.exe).Path
           & $jauc asm tests\v082_native_main.jau -o v082-main-x64.s --target windows-x86_64 --debug
           if ($LASTEXITCODE -ne 0) { throw 'x64 asm failed' }
-          if (!(Select-String v082-main-x64.s -SimpleMatch 'call jau_fn_main' -Quiet)) { throw 'native PE entry does not call jau_fn_main' }
-          if (!(Select-String v082-main-x64.s -SimpleMatch 'DeathAmir Jau @ DeathAmir 2026 (C)' -Quiet)) { throw 'generated assembly copyright missing' }
+          if (!(Select-String -Path v082-main-x64.s -Pattern 'call jau_fn_main' -SimpleMatch -Quiet)) { throw 'native PE entry does not call jau_fn_main' }
+          if (!(Select-String -Path v082-main-x64.s -Pattern 'DeathAmir Jau @ DeathAmir 2026 (C)' -SimpleMatch -Quiet)) { throw 'generated assembly copyright missing' }
           & $jauc native tests\v082_native_main.jau -o v082-main-x64.exe --target windows-x86_64 --debug
           if ($LASTEXITCODE -ne 0) { throw 'x64 native build failed' }
           $out=@(& .\v082-main-x64.exe)
