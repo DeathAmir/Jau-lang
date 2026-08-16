@@ -45,10 +45,12 @@ static IdataBuild build_idata(const std::vector<ImportDesc>& imports,bool x64){
     z.dir_rel=0;z.dir_size=(uint32_t)(groups.size()*20u);return z;
 }
 
-static void add_entry_and_thunks(LinkState&st,uint32_t&entry_off,std::unordered_map<std::string,uint32_t>&thunk_off,size_t&entry_main_patch){
+static void add_entry_and_thunks(LinkState&st,uint32_t&entry_off,std::unordered_map<std::string,uint32_t>&thunk_off,size_t&entry_main_patch,bool executable_entry){
     auto&text=st.outs[0].data;text.resize(alignsz(text.size(),16),0x90);entry_off=(uint32_t)text.size();
-    if(st.x64){text.insert(text.end(),{0x48,0x83,0xec,0x28,0xe8,0,0,0,0,0x48,0x83,0xc4,0x28,0xc3});entry_main_patch=entry_off+5;}
-    else{text.insert(text.end(),{0xe8,0,0,0,0,0xc3});entry_main_patch=entry_off+1;}
+    if(executable_entry){
+        if(st.x64){text.insert(text.end(),{0x48,0x83,0xec,0x28,0xe8,0,0,0,0,0x48,0x83,0xc4,0x28,0xc3});entry_main_patch=entry_off+5;}
+        else{text.insert(text.end(),{0xe8,0,0,0,0,0xc3});entry_main_patch=entry_off+1;}
+    }else entry_main_patch=(size_t)-1;
     for(auto&i:st.imports){if(thunk_off.count(i.canonical))continue;text.resize(alignsz(text.size(),st.x64?8:4),0x90);uint32_t off=(uint32_t)text.size();thunk_off[i.canonical]=off;text.insert(text.end(),{0xff,0x25,0,0,0,0});}
     st.outs[0].virtual_size=(uint32_t)text.size();
 }
@@ -60,10 +62,17 @@ static uint32_t find_global_rva(LinkState&st,const std::vector<std::string>&name
 }
 static void patch_rel32(std::vector<uint8_t>&data,size_t off,uint32_t place_rva,uint32_t target_rva,int extra=0){int32_t add=(int32_t)r32(data,off);int64_t v=(int64_t)add+(int64_t)target_rva-(int64_t)(place_rva+4u+(uint32_t)extra);if(v<INT32_MIN||v>INT32_MAX)throw std::runtime_error("REL32 out of range");p32(data,off,(uint32_t)(int32_t)v);}
 
-static int link_pe(const std::vector<std::string>&inputs,const std::string&output,const std::string&target,const std::string&entry,const std::string&subsystem){
-    if(inputs.empty())throw std::runtime_error("no object inputs");LinkState st;st.x64=target=="windows-x86_64";if(!st.x64&&target!="windows-x86")throw std::runtime_error("jauld supports windows-x86_64/windows-x86");st.machine=st.x64?0x8664:0x014c;st.image_base=st.x64?0x140000000ull:0x00400000ull;
+struct ExportItem {std::string public_name,internal_name;};
+struct EdataBuild {std::vector<uint8_t> bytes;uint32_t funcs=0,names=0,ords=0,dll_name=0;std::vector<uint32_t> name_offs;};
+static bool export_ident(const std::string&s){if(s.empty()||!(std::isalpha((unsigned char)s[0])||s[0]=='_'))return false;for(char c:s)if(!(std::isalnum((unsigned char)c)||c=='_'))return false;return true;}
+static std::vector<ExportItem> parse_exports(const std::vector<std::string>&specs){std::vector<ExportItem> out;std::set<std::string> seen;for(auto&s:specs){auto q=s.find('=');ExportItem e{q==std::string::npos?s:s.substr(0,q),q==std::string::npos?s:s.substr(q+1)};if(!export_ident(e.public_name)||!export_ident(e.internal_name))throw std::runtime_error("--export expects identifier or public=internal identifiers");if(!seen.insert(e.public_name).second)throw std::runtime_error("duplicate DLL export: "+e.public_name);out.push_back(e);}std::sort(out.begin(),out.end(),[](const auto&a,const auto&b){return a.public_name<b.public_name;});return out;}
+static EdataBuild build_edata(const std::vector<ExportItem>&ex,const std::string&dll){EdataBuild z;if(ex.empty())return z;z.bytes.resize(40,0);z.funcs=(uint32_t)z.bytes.size();z.bytes.resize(z.bytes.size()+ex.size()*4,0);z.names=(uint32_t)z.bytes.size();z.bytes.resize(z.bytes.size()+ex.size()*4,0);z.ords=(uint32_t)z.bytes.size();z.bytes.resize(z.bytes.size()+ex.size()*2,0);z.dll_name=(uint32_t)z.bytes.size();z.bytes.insert(z.bytes.end(),dll.begin(),dll.end());z.bytes.push_back(0);for(auto&e:ex){z.name_offs.push_back((uint32_t)z.bytes.size());z.bytes.insert(z.bytes.end(),e.public_name.begin(),e.public_name.end());z.bytes.push_back(0);}return z;}
+static uint32_t find_export_rva(LinkState&st,const ExportItem&e){std::vector<std::string> names;if(e.internal_name.rfind("jau_fn_",0)==0)names={e.internal_name,"_"+e.internal_name};else names={"jau_fn_"+e.internal_name,"_jau_fn_"+e.internal_name,e.internal_name,"_"+e.internal_name};return find_global_rva(st,names);}
+
+static int link_pe(const std::vector<std::string>&inputs,const std::string&output,const std::string&target,const std::string&entry,const std::string&subsystem,bool dll_mode,const std::vector<std::string>&export_specs){
+    if(inputs.empty())throw std::runtime_error("no object inputs");LinkState st;st.x64=target=="windows-x86_64";if(!st.x64&&target!="windows-x86")throw std::runtime_error("jauld supports windows-x86_64/windows-x86");st.machine=st.x64?0x8664:0x014c;st.image_base=dll_mode?(st.x64?0x180000000ull:0x10000000ull):(st.x64?0x140000000ull:0x00400000ull);auto exports=parse_exports(export_specs);if(dll_mode&&exports.empty())throw std::runtime_error("DLL build requires at least one --export name");
     for(auto&p:inputs){auto o=read_coff(p);if(o.machine!=st.machine)throw std::runtime_error("object architecture mismatch: "+p);st.objs.push_back(std::move(o));}
-    st.outs={{".text",{},0,0,0,0,0x60000020u},{".rdata",{},0,0,0,0,0x40000040u},{".data",{},0,0,0,0,0xC0000040u},{".idata",{},0,0,0,0,0xC0000040u}};
+    st.outs={{".text",{},0,0,0,0,0x60000020u},{".rdata",{},0,0,0,0,0x40000040u},{".data",{},0,0,0,0,0xC0000040u},{".idata",{},0,0,0,0,0xC0000040u},{".edata",{},0,0,0,0,0x40000040u}};
     for(size_t oi=0;oi<st.objs.size();++oi){auto&o=st.objs[oi];for(size_t si=0;si<o.sections.size();++si){auto&s=o.sections[si];if(skip_section(s))continue;int g=group_for(s);s.out_group=g;auto&out=st.outs[(size_t)g];out.data.resize(alignsz(out.data.size(),group_align(g)),0);s.out_off=(uint32_t)out.data.size();out.data.insert(out.data.end(),s.data.begin(),s.data.end());uint32_t need=s.out_off+std::max<uint32_t>((uint32_t)s.data.size(),s.virtual_size);if(need>out.data.size())out.data.resize(need,0);out.virtual_size=(uint32_t)out.data.size();}}
     for(size_t oi=0;oi<st.objs.size();++oi){auto&o=st.objs[oi];for(uint32_t si=0;si<o.symbols.size();++si){auto&s=o.symbols[si];if(!s.valid||s.aux_entry||s.section<=0||s.storage!=2||s.name.empty())continue;if((size_t)s.section>o.sections.size()||o.sections[(size_t)s.section-1].out_group<0)continue;auto it=st.globals.find(s.name);if(it!=st.globals.end())throw std::runtime_error("duplicate external symbol: "+s.name);st.globals[s.name]={oi,si};}}
-    collect_imports(st);std::unordered_map<std::string,uint32_t>thunk_off;uint32_t entry_off=0;size_t main_patch=0;add_entry_and_thunks(st,entry_off,thunk_off,main_patch);auto id=build_idata(st.imports,st.x64);st.outs[3].data=id.bytes;st.outs[3].virtual_size=(uint32_t)id.bytes.size();
+    collect_imports(st);std::unordered_map<std::string,uint32_t>thunk_off;uint32_t entry_off=0;size_t main_patch=0;add_entry_and_thunks(st,entry_off,thunk_off,main_patch,!dll_mode);auto id=build_idata(st.imports,st.x64);st.outs[3].data=id.bytes;st.outs[3].virtual_size=(uint32_t)id.bytes.size();auto ed=build_edata(exports,fs::path(output).filename().string());st.outs[4].data=ed.bytes;st.outs[4].virtual_size=(uint32_t)ed.bytes.size();

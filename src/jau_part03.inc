@@ -243,12 +243,14 @@ Result compile_file(const std::string&input,const std::string&output,const Compi
 Result run_source(const std::string&input,const CompileOptions&o,const std::vector<std::string>&args){try{g_runtime_args=args;VM vm(compile_program(input,o),o.debug);vm.run();return {true,""};}catch(const std::exception&e){return {false,e.what()};}}
 Result run_bytecode(const std::string&input,const std::vector<std::string>&args){try{g_runtime_args=args;VM vm(load(input));vm.run();return {true,""};}catch(const std::exception&e){return {false,e.what()};}}
 Result emit_assembly(const std::string&input,const std::string&output,const std::string&target,const CompileOptions&o){try{auto ast=parse_file(input,o);AOT a(target,o.library_mode,o.optimize,o.native_symbols);write_text(output,a.gen(ast));return {true,"assembly emitted: "+output+" ("+target+", safe-AOT/O0)"};}catch(const std::exception&e){return {false,e.what()};}}
+static bool shared_export_ident(const std::string&s){if(s.empty()||!(std::isalpha((unsigned char)s[0])||s[0]=='_'))return false;for(char c:s)if(!(std::isalnum((unsigned char)c)||c=='_'))return false;return true;}
+static void append_shared_export_aliases(const fs::path&asm_path,const CompileOptions&o){if(!o.shared)return;std::ofstream f(asm_path,std::ios::app);if(!f)throw Error("cannot append shared export aliases");for(auto&spec:o.exports){auto q=spec.find('=');std::string pub=q==std::string::npos?spec:spec.substr(0,q),in=q==std::string::npos?spec:spec.substr(q+1);if(!shared_export_ident(pub)||!shared_export_ident(in))throw Error("--export expects identifier or public=internal identifiers");std::string target=in.rfind("jau_fn_",0)==0?in:"jau_fn_"+in;if(pub!=target)f<<"\n.globl "<<pub<<"\n.set "<<pub<<","<<target<<"\n";}}
 Result native_build(const std::string&input,const std::string&output,const std::string&target,const CompileOptions&o){try{
-    auto tmp=fs::temp_directory_path()/"jau_native.s";auto r=emit_assembly(input,tmp.string(),target,o);if(!r.ok)return r;
+    auto tmp=fs::temp_directory_path()/"jau_native.s";auto r=emit_assembly(input,tmp.string(),target,o);if(!r.ok)return r;append_shared_export_aliases(tmp,o);
     bool cpp=false;for(auto&x:o.native_inputs){auto e=lower_copy(fs::path(x).extension().string());if(e==".cpp"||e==".cxx"||e==".cc"||e==".c++")cpp=true;}
     std::string cc;
-    if(target=="linux-x86_64")cc=(cpp?"c++":"cc")+std::string(" -no-pie ")+shell_quote(tmp.string());
-    else if(target=="linux-x86")cc=(cpp?"c++":"cc")+std::string(" -m32 -no-pie ")+shell_quote(tmp.string());
+    if(target=="linux-x86_64")cc=(cpp?"c++":"cc")+std::string(o.shared?" -shared -fPIC ":" -no-pie ")+shell_quote(tmp.string());
+    else if(target=="linux-x86")cc=(cpp?"c++":"cc")+std::string(o.shared?" -m32 -shared -fPIC ":" -m32 -no-pie ")+shell_quote(tmp.string());
     else if(target=="windows-x86_64")cc=(cpp?"x86_64-w64-mingw32-g++":"x86_64-w64-mingw32-gcc")+std::string(" -no-pie ")+shell_quote(tmp.string());
     else if(target=="windows-x86")cc=(cpp?"i686-w64-mingw32-g++":"i686-w64-mingw32-gcc")+std::string(" -no-pie ")+shell_quote(tmp.string());
     else return {false,"unknown target: "+target};
