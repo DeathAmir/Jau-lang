@@ -1,0 +1,102 @@
+import "ffi.jau"
+import "pkg.jau"
+
+/*
+    JGui Jau API
+
+    This module loads the platform runtime installed with the JGui package and
+    exposes a small, stable immediate-mode UI surface to Jau VM programs.
+*/
+
+let JGui_module = ffi.open(package_runtime("JGui"));
+let JGui_create_pointer = ffi.symbol(JGui_module, "jgui_create");
+let JGui_begin_frame_pointer = ffi.symbol(JGui_module, "jgui_begin_frame");
+let JGui_render_pointer = ffi.symbol(JGui_module, "jgui_render");
+let JGui_destroy_pointer = ffi.symbol(JGui_module, "jgui_destroy");
+let JGui_begin_window_pointer = ffi.symbol(JGui_module, "jgui_begin_window");
+let JGui_end_window_pointer = ffi.symbol(JGui_module, "jgui_end_window");
+let JGui_text_pointer = ffi.symbol(JGui_module, "jgui_text");
+let JGui_button_pointer = ffi.symbol(JGui_module, "jgui_button");
+let JGui_checkbox_pointer = ffi.symbol(JGui_module, "jgui_checkbox");
+let JGui_slider_int_pointer = ffi.symbol(JGui_module, "jgui_slider_int");
+let JGui_same_line_pointer = ffi.symbol(JGui_module, "jgui_same_line");
+let JGui_separator_pointer = ffi.symbol(JGui_module, "jgui_separator");
+let JGui_demo_window_pointer = ffi.symbol(JGui_module, "jgui_demo_window");
+
+namespace JGui {
+    func available() {
+        return JGui_module != 0;
+    }
+
+    func init(title, width, height) {
+        let title_pointer = ffi.cstr(title);
+        let result = ffi.call3(JGui_create_pointer, title_pointer, width, height);
+        ffi.release(title_pointer);
+        return result;
+    }
+
+    func begin_frame() {
+        return ffi.call0(JGui_begin_frame_pointer);
+    }
+
+    func render() {
+        return ffi.call0(JGui_render_pointer);
+    }
+
+    func begin_window(title) {
+        let title_pointer = ffi.cstr(title);
+        let result = ffi.call1(JGui_begin_window_pointer, title_pointer);
+        ffi.release(title_pointer);
+        return result;
+    }
+
+    func end_window() {
+        return ffi.call0(JGui_end_window_pointer);
+    }
+
+    func text(value) {
+        let text_pointer = ffi.cstr(value);
+        let result = ffi.call1(JGui_text_pointer, text_pointer);
+        ffi.release(text_pointer);
+        return result;
+    }
+
+    func button(label) {
+        let label_pointer = ffi.cstr(label);
+        let result = ffi.call1(JGui_button_pointer, label_pointer);
+        ffi.release(label_pointer);
+        return result;
+    }
+
+    func checkbox(label, value) {
+        let label_pointer = ffi.cstr(label);
+        let result = ffi.call2(JGui_checkbox_pointer, label_pointer, value);
+        ffi.release(label_pointer);
+        return result;
+    }
+
+    func slider_int(label, value, minimum, maximum) {
+        let label_pointer = ffi.cstr(label);
+        let result = ffi.call4(JGui_slider_int_pointer, label_pointer, value, minimum, maximum);
+        ffi.release(label_pointer);
+        return result;
+    }
+
+    func same_line() {
+        return ffi.call0(JGui_same_line_pointer);
+    }
+
+    func separator() {
+        return ffi.call0(JGui_separator_pointer);
+    }
+
+    func demo_window() {
+        return ffi.call0(JGui_demo_window_pointer);
+    }
+
+    func shutdown() {
+        let result = ffi.call0(JGui_destroy_pointer);
+        ffi.close(JGui_module);
+        return result;
+    }
+}
