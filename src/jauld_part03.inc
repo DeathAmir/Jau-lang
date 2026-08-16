@@ -25,7 +25,7 @@ static JauLinkMeta read_meta_file(const fs::path&p){
     return m;
 }
 static void usage(){std::cout<<"jauld 0.4\nusage: jauld <input.obj> [more.obj ...] -o <program.exe> [--target <windows-x86_64|windows-x86>] [--entry symbol] [--meta file.jmeta]\nmetadata: JAUMETA1 with target/entry/abi/kind/subsystem/producer/version. If omitted, <first-object>.jmeta is auto-detected.\n";}
-int main(int argc,char**argv){try{
+int main(int argc,char**argv){std::cerr<<"DeathAmir Jau @ DeathAmir 2026 (C)\n";try{
     if(argc<2){usage();return 0;}std::vector<std::string>in;std::string out="a.exe",target,entry,meta_path;
     for(int i=1;i<argc;++i){std::string a=argv[i];if(a=="-o"&&i+1<argc)out=argv[++i];else if(a=="--target"&&i+1<argc)target=argv[++i];else if(a=="--entry"&&i+1<argc)entry=argv[++i];else if(a=="--meta"&&i+1<argc)meta_path=argv[++i];else if(a=="--help"||a=="-h"){usage();return 0;}else in.push_back(a);}
     if(in.empty())throw std::runtime_error("no object inputs");

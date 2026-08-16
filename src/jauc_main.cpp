@@ -207,7 +207,7 @@ static int jauc_main_impl(int argc, char** argv) {
     if (argc < 3) { help(); return 2; }
     std::string input = argv[2], output, target, runtime; std::vector<std::string> runargs; jau::CompileOptions opt; bool optimize_set=false;
     for (int i = 3; i < argc; ++i) { std::string a = argv[i]; if (a == "--") { for (++i; i < argc; ++i) runargs.push_back(argv[i]); break; } if (a == "-o" && i + 1 < argc) output = argv[++i]; else if (a == "--target" && i + 1 < argc) target = argv[++i]; else if (a == "--runtime" && i + 1 < argc) runtime = argv[++i]; else if (a == "--library") opt.library_mode = true; else if (a == "--debug") opt.debug = true; else if (a == "--link" && i + 1 < argc) opt.native_inputs.push_back(argv[++i]); else if (a == "-I" && i + 1 < argc) opt.import_paths.push_back(argv[++i]); else if (a.rfind("-O", 0) == 0 && a.size() == 3 && a[2]>='0'&&a[2]<='3') {opt.optimize = a[2] - '0';optimize_set=true;} }
-    if(cmd=="native"&&!optimize_set)opt.optimize=3;
+    if(cmd=="native"&&!optimize_set)opt.optimize=0; // v0.8.2 correctness-first native default
     jau::Result r;
     if (cmd == "run") r = jau::run_source(input, opt, runargs);
     else if (cmd == "debug") { opt.debug=true; r = jau::run_source(input,opt,runargs); }
@@ -233,4 +233,4 @@ static int jauc_main_impl(int argc, char** argv) {
     if (!r.ok) { print_diagnostic(input,cmd,r.message); return 1; } if (!r.message.empty()) std::cout << r.message << "\n"; return 0;
 }
 
-int main(int argc,char**argv){try{return jauc_main_impl(argc,argv);}catch(const std::exception&e){std::cerr<<"jauc[fatal]: "<<e.what()<<"\n";return 1;}catch(...){std::cerr<<"jauc[fatal]: unknown internal error\n";return 1;}}
+int main(int argc,char**argv){std::cerr<<jau::copyright_notice()<<"\n";try{return jauc_main_impl(argc,argv);}catch(const std::exception&e){std::cerr<<"jauc[fatal]: "<<e.what()<<"\n";return 1;}catch(...){std::cerr<<"jauc[fatal]: unknown internal error\n";return 1;}}

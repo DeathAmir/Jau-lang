@@ -1,0 +1,8 @@
+func main()
+{
+    let total = 0;
+    for (let i = 0; i < 5; i++) { total += i; }
+    let bits = (0x55 | 0x0A) ^ 0x03;
+    if (total == 10 and bits == 92) { print(1); } else { print(0); }
+    return 0;
+}

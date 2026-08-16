@@ -483,6 +483,7 @@ static int build_object(const std::string&in,const std::string&out,const std::st
 }
 
 int main(int argc,char**argv){
+    std::cerr << "DeathAmir Jau @ DeathAmir 2026 (C)\n";
     try{
         if(argc==1){
             std::cout<<"jauas 0.6\n"

@@ -27,6 +27,7 @@ static std::string current_executable_path(const char* argv0) {
 }
 
 int main(int argc, char** argv) {
+    std::cerr << jau::copyright_notice() << "\n";
     std::vector<std::string> embedded_args;
     for (int i = 1; i < argc; ++i) embedded_args.push_back(argv[i]);
 

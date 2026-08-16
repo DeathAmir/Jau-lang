@@ -5,7 +5,7 @@
 
 namespace jau {
 struct CompileOptions {
-    int optimize = 2;
+    int optimize = 0;
     bool library_mode = false;
     std::vector<std::string> import_paths;
     std::vector<std::string> native_inputs;
@@ -29,4 +29,5 @@ std::string package_manifest(const std::string& archive);
 std::string package_read_file(const std::string& archive, const std::string& relative_path);
 bool package_verify(const std::string& archive);
 std::string version();
+std::string copyright_notice();
 }

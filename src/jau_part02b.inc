@@ -18,11 +18,25 @@
         case Stmt::FuncS:break;
     }}
 public:
-    Program compile(std::vector<std::unique_ptr<Stmt>>&ast,int opt){if(opt>0)optimize_stmts(ast);
+    Program compile(std::vector<std::unique_ptr<Stmt>>&ast,int opt){
+        // v0.8.2 correctness gate: bytecode optimization is disabled together
+        // with AOT optimization. -O flags stay accepted for CLI compatibility,
+        // but no AST rewrite is allowed until side effects and control flow are
+        // covered by transformation-specific regression tests.
+        (void)opt;
         p.funcs.push_back({"<main>",0,0,{}});fidx["<main>"]=0;
         for(auto&s:ast)if(s->k==Stmt::FuncS&&s->external)externs.insert(s->name);
         for(auto&s:ast)if(s->k==Stmt::FuncS&&!s->external){if(fidx.count(s->name))throw Error("duplicate function: "+s->name);int id=(int)p.funcs.size();fidx[s->name]=id;p.funcs.push_back({s->name,(int)s->params.size(),0,{}});}
-        f=&p.funcs[0];top=true;for(auto&s:ast)if(s->k!=Stmt::FuncS)st(s.get());emit(Op::Null);emit(Op::Ret);
+        // Keep VM and native entry semantics identical. Top-level statements
+        // execute first. A zero-argument user func main() is then invoked once,
+        // unless source explicitly contains a top-level main() call. This makes
+        // normal Jau programs behave consistently across run/build/native.
+        bool explicit_main=false;
+        for(auto&s:ast)if(s->k==Stmt::ExprS&&s->expr&&s->expr->k==Expr::Call&&s->expr->a&&s->expr->a->k==Expr::Var&&s->expr->a->text=="main")explicit_main=true;
+        f=&p.funcs[0];top=true;for(auto&s:ast)if(s->k!=Stmt::FuncS)st(s.get());
+        auto main_it=fidx.find("main");
+        if(main_it!=fidx.end()&&!explicit_main){if(p.funcs[main_it->second].arity!=0)throw Error("entry func main() must not take parameters");emit(Op::Call,main_it->second);emit(Op::Pop);}
+        emit(Op::Null);emit(Op::Ret);
         for(auto&s:ast)if(s->k==Stmt::FuncS&&!s->external){f=&p.funcs[fidx[s->name]];top=false;locals.clear();const_locals.clear();nextlocal=0;auto dot=s->name.rfind('.');current_ns=dot==std::string::npos?std::string():s->name.substr(0,dot);for(auto&n:s->params)locals[n]=nextlocal++;for(auto&x:s->body)st(x.get());emit(Op::Null);emit(Op::Ret);f->locals=nextlocal;}
         return p;}
 };

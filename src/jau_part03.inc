@@ -7,6 +7,9 @@ static Program compile_program(const std::string&input,const CompileOptions&o){a
 class AOT {
     std::string target; bool is64=false, win=false, library=false; int optimize=0,label=0; std::ostringstream o;
     std::unordered_map<std::string,Stmt*> funcs; std::unordered_set<std::string> externs; std::vector<std::string> native_symbols;
+    // AOT string literals are pooled and emitted after code generation. Keeping
+    // ownership here prevents temporary pointers from leaking into generated code.
+    std::vector<std::pair<std::string,std::string>> string_literals; int string_serial=0;
     struct Ctx{std::unordered_map<std::string,int> locals,params;int next=0;std::string end,ns;std::vector<std::string> breaks,continues;}; Ctx c;
     std::string L(){return ".L"+std::to_string(label++);} int word()const{return is64?8:4;}
     std::string clean(const std::string&n)const{std::string r;for(unsigned char ch:n)r+=(std::isalnum(ch)||ch=='_')?(char)ch:'_';return r;}
@@ -25,6 +28,20 @@ class AOT {
         return match.empty()?clean(n):match;
     }
     bool has_native_symbol(const std::string&n)const{std::string wanted=canonical_foreign(clean(n));for(auto&actual:native_symbols)if(canonical_foreign(actual)==wanted)return true;return false;}
+    static std::string asm_string(std::string v){
+        std::string r; r.reserve(v.size()+8);
+        for(unsigned char c:v){if(c=='\\')r+="\\\\";else if(c=='\"')r+="\\\"";else if(c=='\n')r+="\\n";else if(c=='\r')r+="\\r";else if(c=='\t')r+="\\t";else if(c==0)r+="\\0";else r+=(char)c;}
+        return r;
+    }
+    std::string intern_string(const std::string&v){std::string lab=".Ljau_str_"+std::to_string(string_serial++);string_literals.push_back({lab,v});return lab;}
+    void emit_puts_literal(const std::string&v){
+        std::string lab=intern_string(v);
+        if(is64){
+            if(win)o<<"  lea rcx, [rip+"<<lab<<"]\n  sub rsp, 32\n  call puts\n  add rsp, 32\n";
+            else o<<"  lea rdi, [rip+"<<lab<<"]\n  call puts@PLT\n";
+        }else o<<"  push OFFSET FLAT:"<<lab<<"\n  call puts\n  add esp, 4\n";
+        o<<"  xor eax,eax\n";push(is64?"rax":"eax");
+    }
     int slot(const std::string&n){auto it=c.locals.find(n);if(it!=c.locals.end())return it->second;int q=(++c.next)*word();c.locals[n]=q;return q;}
     void push(const std::string&r){o<<"  push "<<r<<"\n";} void pop(const std::string&r){o<<"  pop "<<r<<"\n";}
     void load_var(const std::string&n){
@@ -116,6 +133,9 @@ class AOT {
             if((n=="time.now_ms"||n=="clock_ms")&&e->args.empty()){emit_time_ms(false);return;}
             if((n=="time.now_ns"||n=="clock_ns")&&e->args.empty()){emit_time_ms(true);return;}
             if(n=="print"&&e->args.size()==1){
+                // Literal strings are a native AOT primitive. Other string/array
+                // operations still fail explicitly instead of silently miscompiling.
+                if(e->args[0]&&e->args[0]->k==Expr::Lit){if(auto sv=std::get_if<std::string>(&e->args[0]->v.data)){emit_puts_literal(*sv);return;}}
                 ex(e->args[0].get());pop(is64?"rax":"eax");
                 if(is64){
                     if(win)o<<"  mov rdx, rax\n  lea rcx, [rip+fmt_i]\n  sub rsp, 32\n  call printf\n  add rsp, 32\n";
@@ -169,28 +189,49 @@ class AOT {
         return s;
     }
 public:
-    AOT(std::string t,bool lib=false,int opt=0,const std::vector<std::string>&ns={}):target(std::move(t)),library(lib),optimize(opt),native_symbols(ns){
+    AOT(std::string t,bool lib=false,int opt=0,const std::vector<std::string>&ns={}):target(std::move(t)),library(lib),optimize(0),native_symbols(ns){
+        // v0.8.2 safety gate: AOT optimizations are intentionally disabled until
+        // each transformation has side-effect and control-flow regression tests.
+        // Accept -O flags for CLI compatibility, but never trade correctness for speed.
+        (void)opt;
         win=target.rfind("windows",0)==0;is64=target.find("x86_64")!=std::string::npos;
         if(target!="linux-x86_64"&&target!="linux-x86"&&target!="windows-x86_64"&&target!="windows-x86")throw Error("unknown target: "+target);
     }
     std::string gen(std::vector<std::unique_ptr<Stmt>>&ast){
-        if(optimize>0)optimize_stmts(ast);
+        // Do not mutate the AST here. The old optimizer could erase observable
+        // work before native codegen. Native AOT remains deliberately unoptimized
+        // until transformations are proven semantics-preserving by tests.
         for(auto&s:ast)if(s->k==Stmt::FuncS){if(s->external)externs.insert(s->name);else funcs[s->name]=s.get();}
-        o<<".intel_syntax noprefix\n.section .rodata\nfmt_i: .asciz \""<<(is64?"%lld":"%d")<<"\\n\"\n.text\n.extern printf\n";
+        o<<".intel_syntax noprefix\n# DeathAmir Jau @ DeathAmir 2026 (C)\n.section .rodata\nfmt_i: .asciz \""<<(is64?"%lld":"%d")<<"\\n\"\njau_copyright: .asciz \"DeathAmir Jau @ DeathAmir 2026 (C)\"\n.text\n.extern printf\n.extern puts\n";
         for(auto&n:externs)o<<".extern "<<foreign_sym(n)<<"\n";
         for(auto&s:ast)if(s->k==Stmt::FuncS&&!s->external)emit_func(s.get());
         if(!library){
+            // Native executable entry semantics:
+            //   1) execute top-level statements once;
+            //   2) if a zero-argument user func main() exists and top-level code
+            //      did not explicitly call main(), invoke jau_fn_main exactly once.
+            // This fixes the silent-empty-EXE regression where func main() was
+            // emitted but the PE entry point never called it.
+            Stmt* user_main=nullptr;auto mi=funcs.find("main");if(mi!=funcs.end())user_main=mi->second;
+            if(user_main&&!user_main->params.empty())throw Error("native entry func main() must not take parameters");
+            bool explicit_main=false;
+            for(auto&s:ast)if(s->k==Stmt::ExprS&&s->expr&&s->expr->k==Expr::Call&&s->expr->a&&s->expr->a->k==Expr::Var&&s->expr->a->text=="main")explicit_main=true;
             c=Ctx{};c.end=L();o<<".globl main\nmain:\n"<<(is64?"  push rbp\n  mov rbp,rsp\n  sub rsp, 1024\n":"  push ebp\n  mov ebp,esp\n  sub esp, 512\n");
             for(auto&s:ast)if(s->k!=Stmt::FuncS)st(s.get());
-            o<<"  xor eax,eax\n"<<c.end<<":\n  leave\n  ret\n";
+            if(user_main&&!explicit_main){
+                if(is64){if(win)o<<"  sub rsp, 32\n  call jau_fn_main\n  add rsp, 32\n";else o<<"  call jau_fn_main\n";}
+                else o<<"  call jau_fn_main\n";
+            }else o<<"  xor eax,eax\n";
+            o<<c.end<<":\n  leave\n  ret\n";
         }
-        return peephole(o.str());
+        if(!string_literals.empty()){o<<".section .rodata\n";for(auto&kv:string_literals)o<<kv.first<<": .asciz \""<<asm_string(kv.second)<<"\"\n";}
+        return o.str();
     }
 };
 Result compile_file(const std::string&input,const std::string&output,const CompileOptions&o){try{auto p=compile_program(input,o);save(p,output);return {true,"built "+output};}catch(const std::exception&e){return {false,e.what()};}}
 Result run_source(const std::string&input,const CompileOptions&o,const std::vector<std::string>&args){try{g_runtime_args=args;VM vm(compile_program(input,o),o.debug);vm.run();return {true,""};}catch(const std::exception&e){return {false,e.what()};}}
 Result run_bytecode(const std::string&input,const std::vector<std::string>&args){try{g_runtime_args=args;VM vm(load(input));vm.run();return {true,""};}catch(const std::exception&e){return {false,e.what()};}}
-Result emit_assembly(const std::string&input,const std::string&output,const std::string&target,const CompileOptions&o){try{auto ast=parse_file(input,o);AOT a(target,o.library_mode,o.optimize,o.native_symbols);write_text(output,a.gen(ast));return {true,"assembly emitted: "+output+" ("+target+", O"+std::to_string(o.optimize)+")"};}catch(const std::exception&e){return {false,e.what()};}}
+Result emit_assembly(const std::string&input,const std::string&output,const std::string&target,const CompileOptions&o){try{auto ast=parse_file(input,o);AOT a(target,o.library_mode,o.optimize,o.native_symbols);write_text(output,a.gen(ast));return {true,"assembly emitted: "+output+" ("+target+", safe-AOT/O0)"};}catch(const std::exception&e){return {false,e.what()};}}
 Result native_build(const std::string&input,const std::string&output,const std::string&target,const CompileOptions&o){try{
     auto tmp=fs::temp_directory_path()/"jau_native.s";auto r=emit_assembly(input,tmp.string(),target,o);if(!r.ok)return r;
     bool cpp=false;for(auto&x:o.native_inputs){auto e=lower_copy(fs::path(x).extension().string());if(e==".cpp"||e==".cxx"||e==".cc"||e==".c++")cpp=true;}
@@ -218,5 +259,6 @@ Result run_embedded_executable(const std::string&exe,const std::vector<std::stri
     std::ifstream in(exe,std::ios::binary);if(!in)throw Error("cannot open executable");in.seekg(0,std::ios::end);auto end=in.tellg();if(end<(std::streamoff)16)throw Error("no embedded Jau payload");in.seekg(end-(std::streamoff)16);uint64_t n=0;char magic[8];in.read((char*)&n,8);in.read(magic,8);if(std::memcmp(magic,"JAUEXEC1",8))throw Error("no embedded Jau payload");if(n>(uint64_t)(end-(std::streamoff)16))throw Error("corrupt embedded payload");in.seekg(end-(std::streamoff)16-(std::streamoff)n);std::vector<char> data((size_t)n);in.read(data.data(),(std::streamsize)n);
     fs::path tmp=fs::temp_directory_path()/("jau_embedded_"+std::to_string(fnv1a64(exe))+".jbc");{std::ofstream o2(tmp,std::ios::binary);o2.write(data.data(),(std::streamsize)data.size());}auto rr=run_bytecode(tmp.string(),args);std::error_code ec;fs::remove(tmp,ec);return rr;
 }catch(const std::exception&e){return {false,e.what()};}}
-std::string version(){return "0.8.1";}
+std::string version(){return "0.8.2";}
+std::string copyright_notice(){return "DeathAmir Jau @ DeathAmir 2026 (C)";}
 }

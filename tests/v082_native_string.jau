@@ -1,0 +1,8 @@
+func main()
+{
+    print("Add:");
+    print(30);
+    print("Multiply:");
+    print(42);
+    return 0;
+}

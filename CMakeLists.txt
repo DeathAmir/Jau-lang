@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Jau VERSION 0.8.1 LANGUAGES CXX)
+project(Jau VERSION 0.8.2 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -63,3 +63,4 @@ install(TARGETS jauc jur jauas jauld jau-setup RUNTIME DESTINATION bin)
 install(PROGRAMS $<TARGET_FILE_DIR:jauc>/jaupm${CMAKE_EXECUTABLE_SUFFIX} DESTINATION bin OPTIONAL)
 install(FILES tools/jaupm.jau DESTINATION share/jau/tools)
 install(DIRECTORY stdlib/ DESTINATION share/jau/stdlib)
+

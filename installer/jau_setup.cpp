@@ -19,6 +19,7 @@ static fs::path current_executable(const char* argv0){
 static void copy_if(const fs::path&a,const fs::path&b){if(!fs::exists(a))return;fs::create_directories(b.parent_path());fs::copy_file(a,b,fs::copy_options::overwrite_existing);}
 static std::string q(const std::string&s){return "\""+s+"\"";}
 int main(int argc,char**argv){
+    std::cerr << "DeathAmir Jau @ DeathAmir 2026 (C)\n";
     try{
         fs::path self=current_executable(argv[0]), root=self.parent_path(), source=root;
         fs::path prefix;
