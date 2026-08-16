@@ -1,0 +1,212 @@
+name: release-v090
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-v090.yml'
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Windows x64 and x86
+        shell: pwsh
+        run: |
+          cmake -S . -B build64 -A x64 -DJAU_ENABLE_ASM_FASTOPS=OFF
+          cmake --build build64 --config Release --parallel 2
+          cmake -S . -B build32 -A Win32 -DJAU_ENABLE_ASM_FASTOPS=OFF
+          cmake --build build32 --config Release --parallel 2
+
+          $v64 = & .\build64\Release\jauc.exe --version 2> tool64.txt
+          $v32 = & .\build32\Release\jauc.exe --version 2> tool32.txt
+          if ($v64 -ne '0.9.0') { throw "unexpected x64 version: $v64" }
+          if ($v32 -ne '0.9.0') { throw "unexpected x86 version: $v32" }
+          if (!(Test-Path .\build64\Release\jaum.exe)) { throw 'x64 jaum.exe missing' }
+          if (!(Test-Path .\build32\Release\jaum.exe)) { throw 'x86 jaum.exe missing' }
+
+      - name: Validate Windows system-library resolver and user artifacts
+        shell: pwsh
+        run: |
+          cmake -S examples\windows_gui -B gui64 -A x64
+          cmake --build gui64 --config Release --parallel 2
+          $obj=Get-ChildItem gui64 -Recurse -Filter window.cpp.obj | Select-Object -First 1
+          if(!$obj){$obj=Get-ChildItem gui64 -Recurse -Filter window.obj | Select-Object -First 1}
+          if(!$obj){throw 'Win32 GUI bridge object missing'}
+          Copy-Item $obj.FullName window64.obj
+          & .\build64\Release\jauc.exe native examples\windows_gui\main.jau -o gui64.exe --target windows-x86_64 --link window64.obj --system-lib user32 --subsystem windows
+          if($LASTEXITCODE -ne 0 -or !(Test-Path gui64.exe)){throw 'user32/MessageBoxA x64 link failed'}
+
+          @'
+          func add(a,b){ return a+b; }
+          func answer(){ return 42; }
+          '@ | Set-Content -Encoding utf8 libtest.jau
+          & .\build64\Release\jauc.exe shared libtest.jau -o jau090 --target windows-x86_64 --export add --export answer
+          & .\build64\Release\jauc.exe static libtest.jau -o jau090-static --target windows-x86_64
+          if(!(Test-Path jau090.dll)){throw 'Jau DLL missing'}
+          if(!(Test-Path jau090-static.lib)){throw 'Jau static .lib missing'}
+
+          & .\build64\Release\jauc.exe asm libtest.jau -o user-output.s --target windows-x86_64
+          if(Select-String user-output.s -Pattern 'DeathAmir Jau @ DeathAmir 2026 (C)' -SimpleMatch -Quiet){throw 'tool copyright leaked into generated assembly'}
+
+      - name: Stage Windows archives
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release\x64\stdlib,release\x64\tools,release\x64\bootstrap,release\x64\packages,release\x64\docs,release\x64\examples | Out-Null
+          New-Item -ItemType Directory -Force release\x86\stdlib,release\x86\tools,release\x86\bootstrap,release\x86\packages,release\x86\docs,release\x86\examples | Out-Null
+
+          Copy-Item build64\Release\jauc.exe,build64\Release\jur.exe,build64\Release\jauas.exe,build64\Release\jauld.exe,build64\Release\jaum.exe,build64\Release\jaupm.exe,build64\Release\jau-setup.exe release\x64\
+          Copy-Item build32\Release\jauc.exe,build32\Release\jur.exe,build32\Release\jauas.exe,build32\Release\jauld.exe,build32\Release\jaum.exe,build32\Release\jaupm.exe,build32\Release\jau-setup.exe release\x86\
+          Copy-Item stdlib\* release\x64\stdlib\
+          Copy-Item stdlib\* release\x86\stdlib\
+          Copy-Item tools\jaupm.jau release\x64\tools\
+          Copy-Item tools\jaupm.jau release\x86\tools\
+          Copy-Item bootstrap\jauc_stage1.jau release\x64\bootstrap\
+          Copy-Item bootstrap\jauc_stage1.jau release\x86\bootstrap\
+          Copy-Item -Recurse packages\JTTP release\x64\packages\
+          Copy-Item -Recurse packages\JTTP release\x86\packages\
+          Copy-Item docs\*.md release\x64\docs\
+          Copy-Item docs\*.md release\x86\docs\
+          Copy-Item -Recurse examples\windows_gui release\x64\examples\windows_gui
+          Copy-Item -Recurse examples\windows_gui release\x86\examples\windows_gui
+          Copy-Item README.md,LICENSE release\x64\
+          Copy-Item README.md,LICENSE release\x86\
+
+          Compress-Archive -Path release\x64\* -DestinationPath Jau-0.9.0-windows-x64.zip -Force
+          Compress-Archive -Path release\x86\* -DestinationPath Jau-0.9.0-windows-x86.zip -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-windows
+          path: |
+            Jau-0.9.0-windows-x64.zip
+            Jau-0.9.0-windows-x86.zip
+
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Linux x64 and x86
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++-multilib
+          cmake -S . -B build64 -DCMAKE_BUILD_TYPE=Release
+          cmake --build build64 -j2
+          cmake -S . -B build32 -DCMAKE_CXX_FLAGS=-m32 -DCMAKE_ASM_FLAGS=-m32 -DCMAKE_EXE_LINKER_FLAGS=-m32 -DJAU_ENABLE_ASM_FASTOPS=OFF
+          cmake --build build32 -j2
+
+          test "$(./build64/jauc --version 2>/dev/null)" = "0.9.0"
+          test "$(./build32/jauc --version 2>/dev/null)" = "0.9.0"
+          test -x ./build64/jaum
+          test -x ./build32/jaum
+
+      - name: Validate Linux native, shared and static outputs
+        run: |
+          cat > libtest.jau <<'EOF'
+          func add(a,b){ return a+b; }
+          func answer(){ return 42; }
+          EOF
+          ./build64/jauc native libtest.jau -o native64 --target linux-x86_64
+          ./native64
+          ./build64/jauc shared libtest.jau -o libjau090 --target linux-x86_64 --export add --export answer
+          ./build64/jauc static libtest.jau -o libjau090-static --target linux-x86_64
+          test -f libjau090.so
+          test -f libjau090-static.a
+          ./build64/jauc asm libtest.jau -o user-output.s --target linux-x86_64
+          ! grep -Fq 'DeathAmir Jau @ DeathAmir 2026 (C)' user-output.s
+
+      - name: Stage Linux archives
+        run: |
+          mkdir -p release/x64/{stdlib,tools,bootstrap,packages,docs,examples}
+          mkdir -p release/x86/{stdlib,tools,bootstrap,packages,docs,examples}
+
+          cp build64/jauc build64/jur build64/jauas build64/jauld build64/jaum build64/jaupm build64/jau-setup release/x64/
+          cp build32/jauc build32/jur build32/jauas build32/jauld build32/jaum build32/jaupm build32/jau-setup release/x86/
+          cp -r stdlib/* release/x64/stdlib/
+          cp -r stdlib/* release/x86/stdlib/
+          cp tools/jaupm.jau release/x64/tools/
+          cp tools/jaupm.jau release/x86/tools/
+          cp bootstrap/jauc_stage1.jau release/x64/bootstrap/
+          cp bootstrap/jauc_stage1.jau release/x86/bootstrap/
+          cp -r packages/JTTP release/x64/packages/
+          cp -r packages/JTTP release/x86/packages/
+          cp docs/*.md release/x64/docs/
+          cp docs/*.md release/x86/docs/
+          cp -r examples/windows_gui release/x64/examples/windows_gui
+          cp -r examples/windows_gui release/x86/examples/windows_gui
+          cp README.md LICENSE release/x64/
+          cp README.md LICENSE release/x86/
+
+          tar -C release/x64 -czf Jau-0.9.0-linux-x64.tar.gz .
+          tar -C release/x86 -czf Jau-0.9.0-linux-x86.tar.gz .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-linux
+          path: |
+            Jau-0.9.0-linux-x64.tar.gz
+            Jau-0.9.0-linux-x86.tar.gz
+
+  publish:
+    needs: [windows, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Create checksums
+        run: |
+          cd release-assets
+          sha256sum Jau-0.9.0-windows-x64.zip Jau-0.9.0-windows-x86.zip Jau-0.9.0-linux-x64.tar.gz Jau-0.9.0-linux-x86.tar.gz > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > release-notes.md <<'EOF'
+          Jau 0.9.0 expands the toolchain from a compiler/runtime into a practical native project and library workflow.
+
+          Highlights:
+          - Windows system-library resolver in `jauld` with `--system-lib` and explicit `--import symbol=dll` mappings.
+          - Native `.jaux` manifests can carry Windows/Linux system-library dependencies while Jau source and native object payloads remain separate.
+          - `jauc shared` builds Windows DLLs and Linux `.so` libraries with explicit public exports.
+          - `jauc static` builds Windows `.lib` and Linux `.a` static archives.
+          - New `jaum` project builder reads `jaum.txt` and supports executable/shared/static projects, targets, native objects, system libraries, imports, exports and include paths.
+          - `jaum` is included by the installer and all primary CI/release packages.
+          - JSON helpers for API-oriented VM/JBC programs: validation, typed path lookup, nested object keys and array indexes.
+          - Indexed array assignment such as `values[1] = 42` in VM/JBC mode.
+          - Official Win32 GUI example using a C ABI bridge and `user32` through Jau's linker pipeline.
+          - Generated assembly/binaries/libraries are user artifacts and no longer receive the tool copyright banner; the notice remains on Jau command-line tools.
+          - Expanded documentation for CLI, targets, JauM, libraries, system libraries, JSON/HTTP, GUI and native extensions.
+
+          Validated release targets:
+          - Windows x86-64
+          - Windows x86
+          - Linux x86-64
+          - Linux x86
+
+          Current boundaries:
+          - macOS and ARM backends are not advertised as implemented in 0.9.0.
+          - VM/JBC supports dynamic arrays and JSON more broadly than native AOT; unsupported native dynamic-container constructs fail explicitly.
+          - Native TLS and a built-in cross-platform GUI toolkit are not yet part of the core runtime; native C/C++ bridges remain the supported route for platform UI/APIs.
+
+          See `README.md` and `docs/V090.md` for the complete release guide.
+          EOF
+
+          if gh release view v0.9.0 >/dev/null 2>&1; then
+            echo 'v0.9.0 already exists; refusing to replace an existing release.'
+            exit 1
+          fi
+
+          gh release create v0.9.0 release-assets/Jau-0.9.0-windows-x64.zip release-assets/Jau-0.9.0-windows-x86.zip release-assets/Jau-0.9.0-linux-x64.tar.gz release-assets/Jau-0.9.0-linux-x86.tar.gz release-assets/SHA256SUMS.txt --target "$GITHUB_SHA" --title "Jau 0.9.0 - System Libraries, JauM & Native Libraries" --notes-file release-notes.md
