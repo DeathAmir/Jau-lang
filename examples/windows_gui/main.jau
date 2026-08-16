@@ -1,0 +1,6 @@
+extern func jau_message_box(text, title):int;
+
+func main() {
+    jau_message_box("Hello from a native Jau GUI", "Jau 0.9");
+    return 0;
+}

@@ -1,0 +1,9 @@
+name=jau-window
+source=examples/windows_gui/main.jau
+type=exe
+target=windows-x86_64
+output=build/{name}-{target}{ext}
+optimize=0
+subsystem=windows
+links=examples/windows_gui/window.obj
+system_libs=user32

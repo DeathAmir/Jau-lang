@@ -1,267 +1,191 @@
-# Jau 0.7 Language Reference
+# Jau Language Reference — 0.9
 
-This document describes the language surface implemented by the current Jau toolchain. It distinguishes VM features from the smaller native AOT subset so examples do not promise behavior the compiler does not yet provide.
+This document describes implemented source-language behavior. VM-only or AOT-only differences are called out instead of hidden.
 
-## Program structure
-
-A Jau source file uses the `.jau` extension. Statements are terminated with `;` in normal style. Blocks use braces.
+## Program entry
 
 ```jau
-let x = 10;
-let y = 20;
-print(x + y);
+func main() {
+    print("hello");
+    return 0;
+}
 ```
+
+A zero-argument `main` is invoked automatically when there is no explicit top-level call. Do not append `main();` to ordinary applications.
+
+## Comments
+
+```jau
+// one line
+/* block comment */
+```
+
+## Variables and constants
+
+```jau
+let count = 1;
+var other = 2;
+const limit = 10;
+count += 1;
+count++;
+```
+
+`let` and `var` create mutable bindings. `const` rejects reassignment.
 
 ## Values
 
-The VM supports:
-
-- signed integers;
-- floating-point values;
-- booleans;
-- strings;
-- `null`;
-- arrays.
-
-The current native AOT backend focuses on integer and boolean machine values. Strings and arrays are VM-first and are not yet a stable native ABI.
-
-## Variables
-
-Mutable declaration:
+The VM supports null, booleans, integers, floating-point values, strings and arrays. Current native AOT is intentionally narrower and primarily targets machine-word integer/bool values plus literal string pointers at the C ABI boundary.
 
 ```jau
-let score = 10;
-score = score + 1;
+let nothing = null;
+let also_nothing = nil;
+let ok = true;
+let n = 42;
+let pi = 3.14;
+let text = "Jau";
+let list = [1, 2, 3];
 ```
 
-Constant declaration:
+## Numeric literals
 
 ```jau
-const max_score = 100;
+let decimal = 1_000_000;
+let hex = 0xff;
+let binary = 0b1010;
+let octal = 0o755;
 ```
 
-Reassigning a `const` is a compile error.
+## Operators
+
+Arithmetic: `+ - * / %`
+
+Comparison: `== != < <= > >=`
+
+Logical: `&& || !` and aliases `and or not`
+
+Bitwise: `& | ^ ~ << >>`
+
+Assignment: `= += -= *= /= %=`
+
+Increment/decrement: `++ --`
 
 ## Functions
 
 ```jau
-func add(a, b) {
+func add(a:int, b:int):int {
     return a + b;
 }
-
-let answer = add(20, 22);
 ```
 
-Recursion is supported by the current compiler/runtime subset.
+`fn`, `def` and `function` are accepted aliases for `func`. Type annotations are currently syntax/ABI metadata, not a complete static type checker.
 
-## Native external functions
-
-An AOT/object build can call a C ABI symbol declared with `extern func`:
+## Control flow
 
 ```jau
-extern func native_mul(a, b);
-
-func calculate() {
-    return native_mul(6, 7);
-}
-```
-
-The current stable native FFI boundary is machine-sized integer/boolean values.
-
-## Namespaces
-
-```jau
-namespace MathBox {
-    func add(a, b) {
-        return a + b;
-    }
-}
-
-print(MathBox.add(20, 22));
-```
-
-Jau also supports bracket-call syntax:
-
-```jau
-print(MathBox.add[20, 22]);
-```
-
-Qualified names such as `MathBox.add` and `time.now_ms` are parsed as named calls.
-
-## Conditionals
-
-```jau
-if (score >= 10) {
-    print(1);
+if (score >= 50) {
+    print("pass");
 } else {
-    print(0);
+    print("fail");
 }
-```
 
-## Loops
-
-```jau
 let i = 0;
-
 while (i < 10) {
-    print(i);
-    i = i + 1;
+    i++;
+}
+
+for (let j = 0; j < 10; j++) {
+    if (j == 3) { continue; }
+    if (j == 8) { break; }
 }
 ```
 
-`break` and `continue` are supported inside loops.
+Recursion is supported by the VM and supported AOT function subset.
 
 ## Arrays
 
 ```jau
 let values = [10, 20, 30];
 print(values[0]);
-push(values, 40);
+values[1] = 42;
+push(values, 99);
 print(pop(values));
+print(join(values, ","));
 ```
 
-Current limitation: indexed assignment such as `values[1] = 99;` is not part of the current assignment grammar. Rebuild the array or use library helpers instead of relying on indexed l-values.
+VM/JBC indexed assignment is bounds-checked. Compound indexed assignment is not yet syntax sugar; write:
 
-Useful array/string helpers include `push`, `pop`, `join`, `split`, `len`, `contains`, `starts_with`, `substr`, `char_at`, `find`, `trim`, `upper`, `lower`, and `replace`.
+```jau
+values[i] = values[i] + 1;
+```
+
+instead of `values[i] += 1`.
+
+Arrays and indexed mutation are VM/JBC features in 0.9. Native AOT reports an error rather than silently compiling invalid container code.
+
+## Strings
+
+Common VM helpers include:
+
+```text
+len str int contains starts_with substr char_at find
+trim upper lower replace split join read_line
+```
+
+Literal strings can be emitted in native AOT `.rodata` and passed to C ABI functions as borrowed `const char*`. Dynamic ownership across the native ABI is not standardized yet.
+
+## Namespaces
+
+```jau
+namespace Math {
+    func add(a, b) { return a + b; }
+}
+
+func main() {
+    print(Math.add(20, 22));
+}
+```
+
+The bracket call form remains accepted for compatibility:
+
+```jau
+Math.add[20, 22]
+```
 
 ## Imports
 
-Local source import:
+```jau
+import "local.jau"
+import "pkg:MathX"
+```
+
+Package imports read the package manifest to find Jau wrapper source. Native package object members never enter the lexer/parser.
+
+## Native C ABI declarations
 
 ```jau
-import "math.jau"
+extern func native_add(a:int, b:int):int;
 ```
 
-Installed package import:
+Inside a namespace, an `extern func` still keeps its raw C ABI linker symbol. The namespace applies to Jau wrapper functions, not to the external C name.
+
+## JSON helpers
 
 ```jau
-import "pkg:MathBox"
+let doc = "{\"user\":{\"name\":\"Amir\"},\"items\":[3,7]}";
+print(json_string(doc, "user.name"));
+print(json_get(doc, "items[1]"));
 ```
 
-Protected `JAUPKG2` package source is read into the compilation unit in memory. The installed package does not need plaintext source beside the archive.
+See `HTTP_JSON.md` for the full helper list.
 
-## Time API
+## Standard/builtin surface
 
-Jau 0.7 adds a monotonic time namespace suitable for elapsed-time measurement:
+Filesystem/system helpers include `read_file`, `write_file`, `file_exists`, `mkdir`, `remove_file`, `remove_tree`, `list_dir`, `file_size`, `path_join`, `cwd`, `temp_dir`, `getenv`, `platform`, `arch`, `random_int`.
 
-```jau
-let start = time.now_ms();
+Timing includes `clock_ms`, `clock_ns`, `time.now_ms`, `time.now_ns`, `sleep_ms`, `time.sleep_ms`.
 
-let i = 0;
-while (i < 1000000) {
-    i = i + 1;
-}
+Networking includes `http_get` and `download` with platform-specific transport behavior.
 
-let finish = time.now_ms();
-print(finish - start);
-```
+## VM vs native
 
-Available names:
-
-```text
-time.now_ms()
-time.now_ns()
-time.sleep_ms(ms)
-clock_ms()
-clock_ns()
-sleep_ms(ms)
-clock()
-```
-
-`time.now_ms()` is the recommended benchmark clock. In the VM it is based on `std::chrono::steady_clock`. Windows AOT maps it to the platform monotonic tick API (`GetTickCount64` on x64 and `GetTickCount` on x86).
-
-`time.now_ns()` returns an integer nanosecond-scale value. In the VM it has nanosecond clock resolution where the platform provides it. The current Windows AOT implementation scales the monotonic millisecond tick count by `1,000,000`, so its unit is nanoseconds but its effective resolution is still milliseconds. Use `time.now_ms()` when comparing native benchmark durations.
-
-## Runtime/system builtins
-
-The current VM/compiler surface includes these commonly used builtins:
-
-```text
-print
-clock
-clock_ms / clock_ns
-time.now_ms / time.now_ns / time.sleep_ms
-len / str / int
-read_file / write_file
-contains / starts_with
-argc / arg
-getenv
-file_exists / mkdir / remove_file / remove_tree
-path_join / cwd / temp_dir
-http_get / download
-substr / char_at / find / trim / upper / lower / replace
-manifest_value / hash64
-push / pop / join / split
-read_line / sleep_ms
-platform / arch / random_int
-list_dir / file_size
-jaup_pack / jaup_extract / jaup_manifest / jaup_verify
-```
-
-Not every VM builtin is available in native AOT yet. Native compilation reports an explicit `AOT unknown function`/unsupported-expression error instead of silently changing behavior.
-
-## Build modes
-
-Run source in the VM:
-
-```bash
-jauc run app.jau
-```
-
-Build JBC bytecode:
-
-```bash
-jauc build app.jau -o app.jbc
-jur app.jbc
-```
-
-Emit assembly:
-
-```bash
-jauc asm app.jau -o app.s --target windows-x86_64 -O3
-```
-
-Emit an object:
-
-```bash
-jauc obj app.jau -o app.obj --target windows-x86_64 -O3
-```
-
-Build a native Windows executable with the Jau-owned assembler/linker path:
-
-```bash
-jauc native app.jau -o app.exe --target windows-x86_64 -O3
-```
-
-Supported AOT targets:
-
-```text
-linux-x86_64
-linux-x86
-windows-x86_64
-windows-x86
-```
-
-## Optimization levels
-
-```text
--O0  minimal/no optimizer passes
--O1  AST simplification
--O2  AST optimization + native register/peephole improvements
--O3  current maximum Jau optimization level
-```
-
-`jauc native` defaults to `-O3` when no explicit optimization level is supplied. Other commands keep their explicit/default optimization behavior.
-
-## Current native limitations
-
-The current AOT backend intentionally remains smaller than the VM language:
-
-- integer/bool-focused native values;
-- no stable native string/array ownership ABI yet;
-- limited C ABI argument counts according to target register conventions;
-- native time intrinsic is currently implemented for Windows targets;
-- `jauas` implements the assembly subset generated by Jau, not every MASM/NASM/GAS instruction;
-- `jauld` implements the COFF/PE subset required by Jau and supported native extension objects, not every feature of industrial Windows linkers.
-
-These boundaries are documented so future versions can expand them without pretending unsupported syntax already works.
+The VM is the broad dynamic runtime. AOT is intentionally explicit: if a construct has no stable native ABI/codegen path, compilation should fail with a stage-specific diagnostic. This is a design rule, not something callers should work around by accepting wrong output.

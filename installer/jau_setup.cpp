@@ -32,9 +32,9 @@ int main(int argc,char**argv){
         for(int i=1;i<argc;++i){std::string a=argv[i];if(a=="--prefix"&&i+1<argc)prefix=argv[++i];else if(a=="--source-root"&&i+1<argc)source=argv[++i];else if(a=="--no-path")patch=false;}
         fs::create_directories(prefix/"bin");fs::create_directories(prefix/"stdlib");fs::create_directories(prefix/"tools");fs::create_directories(prefix/"packages");
 #ifdef _WIN32
-        copy_if(root/"jauc.exe",prefix/"bin"/"jauc.exe");copy_if(root/"jur.exe",prefix/"bin"/"jur.exe");copy_if(root/"jauas.exe",prefix/"bin"/"jauas.exe");copy_if(root/"jauld.exe",prefix/"bin"/"jauld.exe");copy_if(root/"jau-setup.exe",prefix/"bin"/"jau-setup.exe");copy_if(root/"jaupm.exe",prefix/"bin"/"jaupm.exe");
+        copy_if(root/"jauc.exe",prefix/"bin"/"jauc.exe");copy_if(root/"jur.exe",prefix/"bin"/"jur.exe");copy_if(root/"jauas.exe",prefix/"bin"/"jauas.exe");copy_if(root/"jauld.exe",prefix/"bin"/"jauld.exe");copy_if(root/"jaum.exe",prefix/"bin"/"jaum.exe");copy_if(root/"jau-setup.exe",prefix/"bin"/"jau-setup.exe");copy_if(root/"jaupm.exe",prefix/"bin"/"jaupm.exe");
 #else
-        copy_if(root/"jauc",prefix/"bin"/"jauc");copy_if(root/"jur",prefix/"bin"/"jur");copy_if(root/"jauas",prefix/"bin"/"jauas");copy_if(root/"jauld",prefix/"bin"/"jauld");copy_if(root/"jau-setup",prefix/"bin"/"jau-setup");copy_if(root/"jaupm",prefix/"bin"/"jaupm");
+        copy_if(root/"jauc",prefix/"bin"/"jauc");copy_if(root/"jur",prefix/"bin"/"jur");copy_if(root/"jauas",prefix/"bin"/"jauas");copy_if(root/"jauld",prefix/"bin"/"jauld");copy_if(root/"jaum",prefix/"bin"/"jaum");copy_if(root/"jau-setup",prefix/"bin"/"jau-setup");copy_if(root/"jaupm",prefix/"bin"/"jaupm");
 #endif
         if(fs::exists(source/"stdlib"))fs::copy(source/"stdlib",prefix/"stdlib",fs::copy_options::recursive|fs::copy_options::overwrite_existing);
         copy_if(source/"tools"/"jaupm.jau",prefix/"tools"/"jaupm.jau");
