@@ -15,7 +15,15 @@ jobs:
         with:
           fetch-depth: 0
       - name: Apply stability patch
-        run: python tools/patch_v082_stability.py
+        shell: pwsh
+        run: |
+          $patch = Get-Content tools\patch_v082_stability.py -Raw
+          $patch = $patch.Replace("src/jau_setup.cpp", "installer/jau_setup.cpp")
+          Set-Content -Encoding utf8 tools\patch_v082_stability.py $patch
+          python tools/patch_v082_stability.py
+          $cmake = Get-Content CMakeLists.txt -Raw
+          $cmake = $cmake.Replace("project(Jau VERSION 0.8.1", "project(Jau VERSION 0.8.2")
+          Set-Content -Encoding utf8 CMakeLists.txt $cmake
       - name: Build Windows x64
         shell: pwsh
         run: |
@@ -84,18 +92,15 @@ jobs:
           & $jauc check bad.jau 2> bad-error.txt
           if ($LASTEXITCODE -eq 0) { throw 'invalid source unexpectedly succeeded' }
           if ((Get-Item bad-error.txt).Length -eq 0) { throw 'invalid source produced no diagnostic' }
-      - name: Existing namespace and package regression
+      - name: Existing namespace regression
         shell: pwsh
-        run: |
-          ctest --test-dir build -C Release --output-on-failure -R "jau_namespaces"
-          & .\build\Release\jauc.exe native tests\native_extension_consumer.jau -o pkg-smoke.exe --target windows-x86_64 2> pkg-error.txt
-          if ($LASTEXITCODE -eq 0) { Write-Host 'package consumer available in current environment' } else { Write-Host 'package smoke skipped here because package is not installed; dedicated jaux workflow validates packaging' }
+        run: ctest --test-dir build -C Release --output-on-failure -R "jau_namespaces"
       - name: Commit validated stability patch
         shell: pwsh
         run: |
           git rm tools/patch_v082_stability.py .github/workflows/v082-stability-land.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add include/jau/jau.hpp src/jau_part03.inc src/jauc_main.cpp src/jur_main.cpp src/jauas_main.cpp src/jau_setup.cpp src/jauld_part03.inc tests/v082_native_main.jau tests/v082_native_string.jau tests/v082_control_flow.jau docs/MAINTAINERS.md
+          git add CMakeLists.txt include/jau/jau.hpp src/jau_part03.inc src/jauc_main.cpp src/jur_main.cpp src/jauas_main.cpp installer/jau_setup.cpp src/jauld_part03.inc tests/v082_native_main.jau tests/v082_native_string.jau tests/v082_control_flow.jau docs/MAINTAINERS.md
           git commit -m "Jau 0.8.2: restore native entry semantics and safe AOT"
           git push origin HEAD:main
