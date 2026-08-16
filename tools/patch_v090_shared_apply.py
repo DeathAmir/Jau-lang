@@ -5,11 +5,16 @@ old = '''def rep(s,a,b,label):\n    if a not in s: raise SystemExit('anchor not 
 new = r'''def rep(s,a,b,label):
     if a in s:
         return s.replace(a,b,1)
-    # jauld_part02.inc is intentionally dense/minified. Match the semantic
-    # call sequence instead of indentation/newlines for this one mutation.
+    # jauld sources are intentionally dense/minified. Match the semantic core
+    # for mutations where whitespace/full-line matching is too brittle.
     if label == 'PE export bytes':
         x = 'add_entry_and_thunks(st,entry_off,thunk_off,main_patch);auto id=build_idata(st.imports,st.x64);st.outs[3].data=id.bytes;st.outs[3].virtual_size=(uint32_t)id.bytes.size();'
         y = 'add_entry_and_thunks(st,entry_off,thunk_off,main_patch,!dll_mode);auto id=build_idata(st.imports,st.x64);st.outs[3].data=id.bytes;st.outs[3].virtual_size=(uint32_t)id.bytes.size();auto ed=build_edata(exports,fs::path(output).filename().string());st.outs[4].data=ed.bytes;st.outs[4].virtual_size=(uint32_t)ed.bytes.size();'
+        if x in s:
+            return s.replace(x,y,1)
+    if label == 'PE link report':
+        x = '<<out.size()<<" bytes, "<<nsec<<" sections, entry="<<entry_names.front()<<")\\n";return 0;'
+        y = '<<out.size()<<" bytes, "<<nsec<<" sections"<<(dll_mode?std::string(", exports=")+std::to_string(exports.size()):std::string(", entry=")+entry_names.front())<<")\\n";return 0;'
         if x in s:
             return s.replace(x,y,1)
     raise SystemExit('anchor not found: '+label)
