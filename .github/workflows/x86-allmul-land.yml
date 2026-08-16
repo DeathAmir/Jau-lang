@@ -56,6 +56,7 @@ jobs:
         shell: pwsh
         run: |
           & .\build32\Release\jauc.exe native tests\v081_syntax.jau -o syntax32.exe --target windows-x86 -O3
+          if($LASTEXITCODE -ne 0){ throw 'syntax x86 compile failed' }
           $out=@(& .\syntax32.exe)
           if(($out -join ',') -ne '10,157,-1'){ throw "syntax x86 regression: $out" }
           & .\build32\Release\jauc.exe obj tests\entry_obj.jau -o entry32.obj --target windows-x86 -O3
@@ -68,6 +69,6 @@ jobs:
           git rm tools/patch_x86_allmul.py .github/workflows/x86-allmul-land.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/jauld_part02.inc
+          git add src/jauld_part02.inc src/jauld_part03.inc
           git commit -m "jauld: provide MSVC x86 __allmul runtime helper"
           git push origin HEAD:main
