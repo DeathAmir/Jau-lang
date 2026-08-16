@@ -6,6 +6,7 @@ on:
       - 'src/**'
       - 'tests/native_extension/**'
       - 'tests/native_extension_consumer.jau'
+      - 'tools/apply_jaux_fix.py'
       - '.github/workflows/jaux-cpp.yml'
   workflow_dispatch:
 
@@ -30,7 +31,7 @@ jobs:
           Copy-Item tests\native_extension\jau.pkg extpkg\jau.pkg
           Copy-Item -Recurse tests\native_extension\src extpkg\src
           Copy-Item $obj.FullName extpkg\native\windows-x86_64\cppmath.obj
-      - name: Pack install and link C++ .jaux x64
+      - name: Pack install parse and link C++ .jaux x64
         shell: pwsh
         run: |
           $pm = (Resolve-Path .\build\Release\jaupm.exe).Path
@@ -40,6 +41,7 @@ jobs:
           Pop-Location
           $env:JAU_HOME="$PWD\native-home"
           & $pm install .\extpkg\dist\CppMath-1.0.0.jaux
+          & $jauc asm tests\native_extension_consumer.jau -o cpp-extension.s --target windows-x86_64
           & $jauc native tests\native_extension_consumer.jau -o cpp-extension.exe --target windows-x86_64
           if (!(Test-Path .\cpp-extension.exe)) { throw 'internal linker did not create C++ extension executable' }
           $p = Start-Process -FilePath .\cpp-extension.exe -PassThru
@@ -80,4 +82,4 @@ jobs:
           if (!(Test-Path .\cpp-extension32.exe)) { throw 'internal linker did not create C++ extension executable' }
           $p = Start-Process -FilePath .\cpp-extension32.exe -PassThru
           if (!$p.WaitForExit(5000)) { Stop-Process -Id $p.Id -Force; throw 'C++ .jaux x86 executable hung' }
-          if ($p.ExitCode -ne 0) { throw "C++ .jaux x86 executable failed: $($p.ExitCode)" }
+          if ($p.ExitCode -ne 0) { throw "C++ .jaux x86 extension executable failed: $($p.ExitCode)" }
