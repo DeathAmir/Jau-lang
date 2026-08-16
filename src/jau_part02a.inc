@@ -13,7 +13,7 @@ public:
     std::vector<std::unique_ptr<Stmt>> parse(){std::vector<std::unique_ptr<Stmt>> v;parse_items(v,false);return v;}
 };
 
-enum class Op:uint8_t { Const,Null,LoadG,StoreG,LoadL,StoreL,Pop,Add,Sub,Mul,Div,Mod,Neg,Not,BitNot,Eq,Ne,Lt,Le,Gt,Ge,And,Or,BitAnd,BitOr,BitXor,Shl,Shr,Jump,JumpFalse,MakeArray,Index,Call,Ret,Halt };
+enum class Op:uint8_t { Const,Null,LoadG,StoreG,LoadL,StoreL,Pop,Add,Sub,Mul,Div,Mod,Neg,Not,BitNot,Eq,Ne,Lt,Le,Gt,Ge,And,Or,BitAnd,BitOr,BitXor,Shl,Shr,Jump,JumpFalse,MakeArray,Index,Call,Ret,Halt,SetIndex };
 struct Ins { Op op; int32_t a=0; };
 struct Fun { std::string name; int32_t arity=0, locals=0; std::vector<Ins> code; };
 struct Program { std::vector<Value> consts; std::vector<std::string> globals; std::vector<Fun> funcs; };

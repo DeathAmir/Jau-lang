@@ -1,0 +1,17 @@
+func main() {
+    let a = [10, 20, 30];
+    a[1] = 42;
+    print(a[1]);
+
+    let data = "{\"name\":\"Jau\",\"version\":9,\"ok\":true,\"user\":{\"name\":\"DeathAmir\"},\"items\":[3,7]}";
+    print(json_valid(data));
+    print(json_string(data, "name"));
+    print(json_int(data, "version"));
+    print(json_bool(data, "ok"));
+    print(json_string(data, "user.name"));
+    print(json_get(data, "items"));
+    print(json_get(data, "items[1]"));
+    print(json_type(data, "items"));
+    print(json_has(data, "missing"));
+    print(json_escape("a\nb\"c"));
+}

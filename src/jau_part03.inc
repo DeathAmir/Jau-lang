@@ -105,6 +105,7 @@ class AOT {
             throw Error("AOT supports integer/bool and string-literal pointer values; dynamic strings/arrays remain VM-only");
         }
         if(e->k==Expr::Var){load_var(e->text);return;}
+        if(e->k==Expr::Index||e->k==Expr::IndexAssign)throw Error("array indexing and indexed assignment are VM/bytecode features; native array ABI is not implemented yet");
         if(e->k==Expr::Assign){
             ex(e->a.get());pop(is64?"rax":"eax");
             auto p=c.params.find(e->text);
