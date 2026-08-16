@@ -1,4 +1,4 @@
-name: v07-native
+name: v08-native
 
 on:
   push:
@@ -17,11 +17,11 @@ jobs:
           cmake -S . -B build -A x64 -DJAU_ENABLE_ASM_FASTOPS=OFF
           cmake --build build --config Release --parallel 2
 
-      - name: Verify Jau 0.7
+      - name: Verify Jau 0.8
         shell: pwsh
         run: |
           $v = & .\build\Release\jauc.exe --version
-          if ($v -ne "0.7.0") { throw "unexpected jauc version: $v" }
+          if ($v -ne "0.8.0") { throw "unexpected jauc version: $v" }
 
       - name: OBJ metadata to PE32+
         shell: pwsh
@@ -58,6 +58,13 @@ jobs:
           if ($lines[0].Trim() -ne "1000000") { throw "optimized loop result mismatch: $lines" }
           if ([int64]$lines[1] -lt 0) { throw "elapsed time was negative: $($lines[1])" }
 
+      - name: Jau 0.8 syntax native smoke
+        shell: pwsh
+        run: |
+          & .\build\Release\jauc.exe native tests\syntax_v08.jau -o syntax-v08.exe --target windows-x86_64 -O3
+          $out = & .\syntax-v08.exe
+          if ($out -ne "12") { throw "Jau 0.8 syntax native mismatch: $out" }
+
       - name: Stage x64 artifact
         shell: pwsh
         run: |
@@ -65,12 +72,12 @@ jobs:
           Copy-Item build\Release\jauc.exe,build\Release\jur.exe,build\Release\jauas.exe,build\Release\jauld.exe,build\Release\jaupm.exe,build\Release\jau-setup.exe dist\
           Copy-Item stdlib\* dist\stdlib\
           Copy-Item tools\jaupm.jau dist\tools\
-          Copy-Item docs\LANGUAGE.md,docs\LINKER.md,docs\PERFORMANCE.md,docs\PACKAGES.md,docs\NATIVE_EXTENSIONS.md,docs\INTEROP.md dist\docs\
+          Copy-Item docs\LANGUAGE.md,docs\LINKER.md,docs\PERFORMANCE.md,docs\PACKAGES.md,docs\NATIVE_EXTENSIONS.md,docs\INTEROP.md,docs\V080.md dist\docs\
           Copy-Item README.md dist\
 
       - uses: actions/upload-artifact@v4
         with:
-          name: jau-0.7-windows-x64
+          name: jau-0.8-windows-x64
           path: dist
 
   windows-x86:
@@ -84,11 +91,11 @@ jobs:
           cmake -S . -B build32 -A Win32 -DJAU_ENABLE_ASM_FASTOPS=OFF
           cmake --build build32 --config Release --parallel 2
 
-      - name: Verify Jau 0.7 x86
+      - name: Verify Jau 0.8 x86
         shell: pwsh
         run: |
           $v = & .\build32\Release\jauc.exe --version
-          if ($v -ne "0.7.0") { throw "unexpected jauc version: $v" }
+          if ($v -ne "0.8.0") { throw "unexpected jauc version: $v" }
 
       - name: OBJ metadata to PE32
         shell: pwsh
@@ -125,6 +132,13 @@ jobs:
           if ($lines[0].Trim() -ne "1000000") { throw "optimized x86 loop result mismatch: $lines" }
           if ([int64]$lines[1] -lt 0) { throw "elapsed x86 time was negative: $($lines[1])" }
 
+      - name: Jau 0.8 syntax native smoke x86
+        shell: pwsh
+        run: |
+          & .\build32\Release\jauc.exe native tests\syntax_v08.jau -o syntax-v08-x86.exe --target windows-x86 -O3
+          $out = & .\syntax-v08-x86.exe
+          if ($out -ne "12") { throw "Jau 0.8 syntax native x86 mismatch: $out" }
+
       - name: Stage x86 artifact
         shell: pwsh
         run: |
@@ -132,10 +146,10 @@ jobs:
           Copy-Item build32\Release\jauc.exe,build32\Release\jur.exe,build32\Release\jauas.exe,build32\Release\jauld.exe,build32\Release\jaupm.exe,build32\Release\jau-setup.exe dist32\
           Copy-Item stdlib\* dist32\stdlib\
           Copy-Item tools\jaupm.jau dist32\tools\
-          Copy-Item docs\LANGUAGE.md,docs\LINKER.md,docs\PERFORMANCE.md,docs\PACKAGES.md,docs\NATIVE_EXTENSIONS.md,docs\INTEROP.md dist32\docs\
+          Copy-Item docs\LANGUAGE.md,docs\LINKER.md,docs\PERFORMANCE.md,docs\PACKAGES.md,docs\NATIVE_EXTENSIONS.md,docs\INTEROP.md,docs\V080.md dist32\docs\
           Copy-Item README.md dist32\
 
       - uses: actions/upload-artifact@v4
         with:
-          name: jau-0.7-windows-x86
+          name: jau-0.8-windows-x86
           path: dist32
