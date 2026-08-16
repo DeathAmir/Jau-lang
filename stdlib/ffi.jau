@@ -11,11 +11,11 @@ namespace ffi {
     func symbol(module, name) { return dll_symbol(module, name); }
     func close(module) { return dll_close(module); }
 
-    func call0(fn) { return dll_call0(fn); }
-    func call1(fn, a) { return dll_call1(fn, a); }
-    func call2(fn, a, b) { return dll_call2(fn, a, b); }
-    func call3(fn, a, b, c) { return dll_call3(fn, a, b, c); }
-    func call4(fn, a, b, c, d) { return dll_call4(fn, a, b, c, d); }
+    func call0(pointer) { return dll_call0(pointer); }
+    func call1(pointer, a) { return dll_call1(pointer, a); }
+    func call2(pointer, a, b) { return dll_call2(pointer, a, b); }
+    func call3(pointer, a, b, c) { return dll_call3(pointer, a, b, c); }
+    func call4(pointer, a, b, c, d) { return dll_call4(pointer, a, b, c, d); }
 
     func cstr(text) { return ffi_cstr(text); }
     func release(pointer) { return ffi_release(pointer); }
