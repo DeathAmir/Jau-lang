@@ -1,0 +1,22 @@
+import "ffi.jau"
+
+func main() {
+    let module = ffi.open(arg(0));
+    if (module == 0) {
+        print("open failed: " + ffi.error());
+        return 1;
+    }
+
+    let add = ffi.symbol(module, "vm_add");
+    let mul = ffi.symbol(module, "vm_mul");
+    if (add == 0 || mul == 0) {
+        print("symbol failed: " + ffi.error());
+        ffi.close(module);
+        return 2;
+    }
+
+    print(ffi.call2(add, 20, 22));
+    print(ffi.call2(mul, 6, 7));
+    ffi.close(module);
+    return 0;
+}
