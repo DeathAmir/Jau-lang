@@ -58,7 +58,11 @@ static std::string expand_package_spec(const std::string& spec,const CompileOpti
     auto slash=spec.find('/');std::string pkg=slash==std::string::npos?spec:spec.substr(0,slash);std::string sub=slash==std::string::npos?"":spec.substr(slash+1);
     fs::path dir=jau_home_path()/"packages"/pkg,archive=dir/"package.jaup";
     if(fs::exists(archive)){
-        if(sub.empty()){auto mf=package_manifest(archive.string());sub=manifest_value(mf,"main");if(sub.empty())sub="main.jau";}
+        auto mf=package_manifest(archive.string());
+        auto type=lower_copy(manifest_value(mf,"type"));
+        if(sub.empty()){sub=manifest_value(mf,"main");if(sub.empty())sub="main.jau";}
+        auto ext=lower_copy(fs::path(sub).extension().string());
+        if(type=="native"&&!ext.empty()&&ext!=".jau")throw Error("native package source entry must be Jau source, not binary object: "+sub);
         return expand_package_impl(archive,sub,opts,seen);
     }
     // Compatibility with source-installed JauPM 0.3/0.4 packages.
@@ -73,7 +77,7 @@ static fs::path resolve_external_import(const fs::path& origin,const fs::path& r
     return {};
 }
 static std::string expand_package_impl(const fs::path& archive,const std::string& rel,const CompileOptions& opts,std::unordered_set<std::string>& seen){
-    fs::path normalized=fs::path(rel).lexically_normal();std::string rs=normalized.generic_string();std::string key="jaup:"+fs::absolute(archive).lexically_normal().string()+"#"+rs;if(seen.count(key))return "";seen.insert(key);
+    fs::path normalized=fs::path(rel).lexically_normal();auto source_ext=lower_copy(normalized.extension().string());if(!source_ext.empty()&&source_ext!=".jau")throw Error("package source resolver refused binary/non-Jau member: "+normalized.generic_string());std::string rs=normalized.generic_string();std::string key="jaup:"+fs::absolute(archive).lexically_normal().string()+"#"+rs;if(seen.count(key))return "";seen.insert(key);
     std::string src=package_read_file(archive.string(),rs),out;std::regex re(R"(^\s*import\s+\"([^\"]+)\"\s*;?\s*$)");std::istringstream in(src);std::string line;
     while(std::getline(in,line)){std::smatch m;if(std::regex_match(line,m,re)){std::string imp=m[1].str();if(imp.rfind("pkg:",0)==0){out+=expand_package_spec(imp.substr(4),opts,seen);out+='\n';continue;}
             fs::path inside=(normalized.parent_path()/fs::path(imp)).lexically_normal();bool found_inside=false;try{out+=expand_package_impl(archive,inside.generic_string(),opts,seen);found_inside=true;}catch(const std::exception&e){std::string msg=e.what();if(msg.find("package file not found:")==std::string::npos)throw;}
@@ -88,7 +92,7 @@ static std::string expand_imports_impl(const fs::path& file,const CompileOptions
 }
 static std::string expand_imports(const fs::path& f,const CompileOptions&o){std::unordered_set<std::string>s;return expand_imports_impl(f,o,s);}
 
-enum class TK { End, Id, Num, Str, LParen,RParen,LBrace,RBrace,LBracket,RBracket,Comma,Semi,Dot,Plus,Minus,Star,Slash,Percent,Bang,Eq,Lt,Gt,EqEq,Ne,Le,Ge,AndAnd,OrOr,
+enum class TK { End, Id, Num, Str, LParen,RParen,LBrace,RBrace,LBracket,RBracket,Comma,Semi,Colon,Dot,Plus,Minus,Star,Slash,Percent,Bang,Eq,Lt,Gt,EqEq,Ne,Le,Ge,AndAnd,OrOr,
     Func,Extern,Namespace,If,Else,While,Return,Break,Continue,Let,Const,True,False,Null };
 struct Tok { TK k; std::string text; int line; };
 class Lexer {
@@ -109,7 +113,7 @@ public:
         if(c=='\"'){get();std::string x;while(peek()&&peek()!='\"'){char q=get();if(q=='\\'){char e=get();if(e=='n')x+='\n';else if(e=='t')x+='\t';else if(e=='r')x+='\r';else x+=e;}else x+=q;}if(get()!='\"')throw Error("unterminated string at line "+std::to_string(ln));t.push_back({TK::Str,x,ln});continue;}
         auto two=[&](char a,char b,TK kk){if(peek()==a&&peek(1)==b){get();get();t.push_back({kk,std::string()+a+b,ln});return true;}return false;};
         if(two('=','=',TK::EqEq)||two('!','=',TK::Ne)||two('<','=',TK::Le)||two('>','=',TK::Ge)||two('&','&',TK::AndAnd)||two('|','|',TK::OrOr))continue;
-        get(); TK k; switch(c){case '(':k=TK::LParen;break;case ')':k=TK::RParen;break;case '{':k=TK::LBrace;break;case '}':k=TK::RBrace;break;case '[':k=TK::LBracket;break;case ']':k=TK::RBracket;break;case ',':k=TK::Comma;break;case ';':k=TK::Semi;break;case '.':k=TK::Dot;break;case '+':k=TK::Plus;break;case '-':k=TK::Minus;break;case '*':k=TK::Star;break;case '/':k=TK::Slash;break;case '%':k=TK::Percent;break;case '!':k=TK::Bang;break;case '=':k=TK::Eq;break;case '<':k=TK::Lt;break;case '>':k=TK::Gt;break;default:throw Error("unexpected character at line "+std::to_string(ln));}t.push_back({k,std::string(1,c),ln});
+        get(); TK k; switch(c){case '(':k=TK::LParen;break;case ')':k=TK::RParen;break;case '{':k=TK::LBrace;break;case '}':k=TK::RBrace;break;case '[':k=TK::LBracket;break;case ']':k=TK::RBracket;break;case ',':k=TK::Comma;break;case ';':k=TK::Semi;break;case ':':k=TK::Colon;break;case '.':k=TK::Dot;break;case '+':k=TK::Plus;break;case '-':k=TK::Minus;break;case '*':k=TK::Star;break;case '/':k=TK::Slash;break;case '%':k=TK::Percent;break;case '!':k=TK::Bang;break;case '=':k=TK::Eq;break;case '<':k=TK::Lt;break;case '>':k=TK::Gt;break;default:throw Error("unexpected character at line "+std::to_string(ln));}t.push_back({k,std::string(1,c),ln});
     }return t;}
 };
 
@@ -143,10 +147,14 @@ class Parser {
     std::unique_ptr<Expr> assign(){auto e=lor();if(eat(TK::Eq)){if(e->k!=Expr::Var)throw Error("invalid assignment target");auto n=std::make_unique<Expr>();n->k=Expr::Assign;n->text=e->text;n->a=assign();return n;}return e;}
     std::unique_ptr<Expr> expr(){return assign();}
     std::vector<std::unique_ptr<Stmt>> block_body(){need(TK::LBrace,"expected {");std::vector<std::unique_ptr<Stmt>> v;while(!at(TK::RBrace)&&!at(TK::End))v.push_back(stmt());need(TK::RBrace,"expected }");return v;}
+    void skip_type_annotation(){if(eat(TK::Colon))qualified_id();}
     std::unique_ptr<Stmt> parse_func(bool external){
-        auto s=std::make_unique<Stmt>();s->k=Stmt::FuncS;s->external=external;s->name=qualified_id();if(!current_namespace.empty()&&s->name.find('.')==std::string::npos)s->name=current_namespace+"."+s->name;need(TK::LParen,"expected (");if(!at(TK::RParen)){do{s->params.push_back(need(TK::Id,"expected parameter").text);}while(eat(TK::Comma));}need(TK::RParen,"expected )");if(external){need(TK::Semi,"expected ; after extern func");}else s->body=block_body();return s;
+        auto s=std::make_unique<Stmt>();s->k=Stmt::FuncS;s->external=external;s->name=qualified_id();if(!current_namespace.empty()&&s->name.find('.')==std::string::npos)s->name=current_namespace+"."+s->name;need(TK::LParen,"expected (");
+        if(!at(TK::RParen)){do{auto param=need(TK::Id,"expected parameter").text;skip_type_annotation();s->params.push_back(param);}while(eat(TK::Comma));}
+        need(TK::RParen,"expected )");skip_type_annotation();
+        if(external){need(TK::Semi,"expected ; after extern func");}else s->body=block_body();return s;
     }
     std::unique_ptr<Stmt> stmt(){
         if(eat(TK::Extern)){need(TK::Func,"expected func after extern");return parse_func(true);}
         if(eat(TK::Func)){return parse_func(false);}
-        if(eat(TK::Let)||eat(TK::Const)){bool con=t[i-1].k==TK::Const;auto s=std::make_unique<Stmt>();s->k=Stmt::VarS;s->constant=con;s->name=need(TK::Id,"expected variable name").text;if(eat(TK::Eq))s->expr=expr();else{s->expr=std::make_unique<Expr>();s->expr->k=Expr::Lit;}eat(TK::Semi);return s;}
+        if(eat(TK::Let)||eat(TK::Const)){bool con=t[i-1].k==TK::Const;auto s=std::make_unique<Stmt>();s->k=Stmt::VarS;s->constant=con;s->name=need(TK::Id,"expected variable name").text;skip_type_annotation();if(eat(TK::Eq))s->expr=expr();else{s->expr=std::make_unique<Expr>();s->expr->k=Expr::Lit;}eat(TK::Semi);return s;}

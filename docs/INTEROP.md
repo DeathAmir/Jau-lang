@@ -112,3 +112,10 @@ jauas input.s -o output.obj --target windows-x86 --object
 ```
 
 Windows targets produce COFF relocatable objects. Final PE executable linking is performed by a normal platform linker/compiler driver so CRT and external library imports remain standards-compatible.
+
+
+## Native package source/binary separation (0.7.1)
+
+For `type="native"` packages, the manifest `main` member is parsed as Jau source while `native_windows_*` members are opaque object bytes. `.obj`/`.o` members never enter the lexer/parser; `jauc native` extracts them and passes them directly to `jauld`.
+
+Optional annotations such as `extern func f(a:int):int;` are accepted as syntax metadata. Full static type checking is not implied yet.

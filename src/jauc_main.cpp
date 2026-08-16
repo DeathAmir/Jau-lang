@@ -71,6 +71,7 @@ static std::string manifest_value(const std::string& text, const std::string& ke
 static fs::path jau_home_path(){ if(const char* h=std::getenv("JAU_HOME"))return fs::path(h); return fs::current_path()/".jau"; }
 static std::vector<std::string> split_csv(const std::string& s){std::vector<std::string> out;std::string cur;std::istringstream in(s);while(std::getline(in,cur,',')){cur=trim_copy(cur);if(!cur.empty())out.push_back(cur);}return out;}
 static std::string native_key(std::string target){for(char&c:target)if(c=='-')c='_';return "native_"+target;}
+static std::string lower_copy_local(std::string x){for(char&c:x)c=(char)std::tolower((unsigned char)c);return x;}
 static std::string read_text(const fs::path&p){std::ifstream f(p,std::ios::binary);if(!f)return "";std::ostringstream s;s<<f.rdbuf();return s.str();}
 static void write_binary(const fs::path&p,const std::string&data){if(p.has_parent_path())fs::create_directories(p.parent_path());std::ofstream f(p,std::ios::binary|std::ios::trunc);if(!f)throw std::runtime_error("cannot create temporary native object");f.write(data.data(),(std::streamsize)data.size());}
 static void write_link_metadata(const fs::path& object,const std::string& target,const std::string& entry,int optimize,const std::string& kind){
@@ -100,10 +101,25 @@ struct NativeCollector {
     void package(const std::string& spec){
         auto slash=spec.find('/');std::string name=slash==std::string::npos?spec:spec.substr(0,slash),sub=slash==std::string::npos?"":spec.substr(slash+1);if(!packages.insert(name).second)return;
         fs::path archive=jau_home_path()/"packages"/name/"package.jaup";if(!fs::exists(archive))return;
-        std::string mf=jau::package_manifest(archive.string());std::string members=manifest_value(mf,native_key(target));if(members.empty())members=manifest_value(mf,"native");
-        for(auto&member:split_csv(members)){std::string bytes=jau::package_read_file(archive.string(),member);fs::path p=temp/("pkg_"+std::to_string(serial++)+"_"+fs::path(member).filename().string());if(p.extension().empty())p+=".obj";write_binary(p,bytes);objects.push_back(p.string());}
+        std::string mf=jau::package_manifest(archive.string());std::string type=lower_copy_local(manifest_value(mf,"type"));
+        if(type=="native"){
+            std::string members=manifest_value(mf,native_key(target));if(members.empty())members=manifest_value(mf,"native");
+            if(members.empty())throw std::runtime_error("native package "+name+" has no object for target "+target);
+            for(auto&member:split_csv(members)){
+                auto ext=lower_copy_local(fs::path(member).extension().string());
+                if(ext!=".obj"&&ext!=".o")throw std::runtime_error("native package "+name+" member is not an object file: "+member);
+                std::string bytes=jau::package_read_file(archive.string(),member);
+                fs::path p=temp/("pkg_"+std::to_string(serial++)+"_"+fs::path(member).filename().string());
+                write_binary(p,bytes);objects.push_back(p.string());
+            }
+        }
         for(auto&dep:split_csv(manifest_value(mf,"dependencies")))package(dep);
-        if(sub.empty())sub=manifest_value(mf,"main");if(!sub.empty()){try{scan_text(jau::package_read_file(archive.string(),sub),fs::current_path()/"__package__.jau");}catch(...) {}}
+        if(sub.empty())sub=manifest_value(mf,"main");
+        if(!sub.empty()){
+            auto ext=lower_copy_local(fs::path(sub).extension().string());
+            if(!ext.empty()&&ext!=".jau")throw std::runtime_error("package source entry is not Jau source: "+sub);
+            scan_text(jau::package_read_file(archive.string(),sub),fs::current_path()/"__package__.jau");
+        }
     }
 };
 

@@ -1,7 +1,7 @@
-extern func cppmath_mul(a, b);
+extern func cppmath_mul(a:int, b:int):int;
 
 namespace CppMath {
-    func mul(a, b) {
+    func mul(a:int, b:int):int {
         return cppmath_mul(a, b);
     }
 }
