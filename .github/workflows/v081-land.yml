@@ -1,0 +1,85 @@
+name: v081-land
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/v081-land.yml'
+permissions:
+  contents: write
+jobs:
+  validate:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply 0.8.1 patch
+        run: python tools/patch_v081.py
+      - name: Build Jau x64
+        shell: pwsh
+        run: |
+          cmake -S . -B build -A x64 -DJAU_ENABLE_ASM_FASTOPS=OFF
+          cmake --build build --config Release --parallel 2
+          $v=& .\build\Release\jauc.exe --version
+          if($v -ne '0.8.1'){ throw "bad version: $v" }
+      - name: Test expanded syntax VM and AOT
+        shell: pwsh
+        run: |
+          $vm=@(& .\build\Release\jauc.exe run tests\v081_syntax.jau)
+          if(($vm -join ',') -ne '10,157,-1'){ throw "syntax VM mismatch: $vm" }
+          $ns=@(& .\build\Release\jauc.exe run tests\v081_namespace.jau)
+          if(($ns -join ',') -ne '42'){ throw "namespace VM mismatch: $ns" }
+          & .\build\Release\jauc.exe native tests\v081_syntax.jau -o v081-syntax.exe --target windows-x86_64 -O3
+          $na=@(& .\v081-syntax.exe)
+          if(($na -join ',') -ne '10,157,-1'){ throw "syntax AOT mismatch: $na" }
+          & .\build\Release\jauc.exe native tests\v081_namespace.jau -o v081-ns.exe --target windows-x86_64 -O3
+          $nn=@(& .\v081-ns.exe)
+          if(($nn -join ',') -ne '42'){ throw "namespace AOT mismatch: $nn" }
+      - name: Build real MathX C++ object
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force mathsrc | Out-Null
+          Copy-Item tests\native_mathx\mathx.cpp mathsrc\mathx.cpp
+          @'
+          cmake_minimum_required(VERSION 3.16)
+          project(MathXObj LANGUAGES CXX)
+          add_library(mathx OBJECT mathx.cpp)
+          '@ | Set-Content -Encoding utf8 mathsrc\CMakeLists.txt
+          cmake -S mathsrc -B mathbuild -A x64
+          cmake --build mathbuild --config Release
+          $obj=Get-ChildItem mathbuild -Recurse -Filter mathx.obj | Select-Object -First 1
+          if(!$obj){ throw 'mathx.obj not produced' }
+          Copy-Item $obj.FullName tests\native_mathx\native\windows-x86_64\mathx.obj
+      - name: Prove namespace extern package call end to end
+        shell: pwsh
+        run: |
+          $pm=(Resolve-Path .\build\Release\jaupm.exe).Path
+          $jauc=(Resolve-Path .\build\Release\jauc.exe).Path
+          Push-Location tests\native_mathx
+          New-Item -ItemType Directory -Force dist | Out-Null
+          & $pm pack dist\MathX-1.0.0.jaux
+          & $pm verify dist\MathX-1.0.0.jaux
+          Pop-Location
+          $env:JAU_HOME="$PWD\v081-home"
+          & $pm install .\tests\native_mathx\dist\MathX-1.0.0.jaux
+          & $jauc check tests\native_mathx_consumer.jau --target windows-x86_64 --debug
+          & $jauc asm tests\native_mathx_consumer.jau -o mathx-consumer.s --target windows-x86_64 --debug 2> mathx-debug.txt
+          if(!(Select-String mathx-debug.txt -Pattern '\[jauc:symbol\] mx_add' -Quiet)){ Get-Content mathx-debug.txt; throw 'mx_add not discovered from COFF' }
+          if(!(Select-String mathx-consumer.s -Pattern 'call mx_add' -Quiet)){ Get-Content mathx-consumer.s; throw 'AOT did not emit call mx_add' }
+          & $jauc native tests\native_mathx_consumer.jau -o mathx-consumer.exe --target windows-x86_64 --debug
+          $out=@(& .\mathx-consumer.exe)
+          if(($out -join ',') -ne '42,42,1024'){ throw "MathX native mismatch: $out" }
+      - name: Existing regression suite
+        shell: pwsh
+        run: |
+          ctest --test-dir build -C Release --output-on-failure
+      - name: Commit validated 0.8.1
+        shell: pwsh
+        run: |
+          git rm tools/patch_v081.py .github/workflows/v081-land.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add CMakeLists.txt src tests docs
+          git commit -m "Jau 0.8.1: fix namespace native calls and expand integer syntax"
+          git push origin HEAD:main
