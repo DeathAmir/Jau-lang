@@ -14,13 +14,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Apply stability patch
+      - name: Apply stability patches
         shell: pwsh
         run: |
           $patch = Get-Content tools\patch_v082_stability.py -Raw
           $patch = $patch.Replace("src/jau_setup.cpp", "installer/jau_setup.cpp")
           Set-Content -Encoding utf8 tools\patch_v082_stability.py $patch
           python tools/patch_v082_stability.py
+          python tools/patch_v082_vm_entry.py
           $cmake = Get-Content CMakeLists.txt -Raw
           $cmake = $cmake.Replace("project(Jau VERSION 0.8.1", "project(Jau VERSION 0.8.2")
           Set-Content -Encoding utf8 CMakeLists.txt $cmake
@@ -88,6 +89,8 @@ jobs:
           $jauc=(Resolve-Path .\build\Release\jauc.exe).Path
           $vm=@(& $jauc run tests\v082_control_flow.jau 2> vm-banner.txt)
           if (($vm -join ',') -ne '1') { throw "VM output mismatch: $vm" }
+          $vmO3=@(& $jauc run tests\v082_control_flow.jau -O3 2> vm-o3-banner.txt)
+          if (($vmO3 -join ',') -ne '1') { throw "VM -O3 compatibility output mismatch: $vmO3" }
           Set-Content -Encoding utf8 bad.jau 'func main( {'
           & $jauc check bad.jau 2> bad-error.txt
           if ($LASTEXITCODE -eq 0) { throw 'invalid source unexpectedly succeeded' }
@@ -98,9 +101,9 @@ jobs:
       - name: Commit validated stability patch
         shell: pwsh
         run: |
-          git rm tools/patch_v082_stability.py .github/workflows/v082-stability-land.yml
+          git rm tools/patch_v082_stability.py tools/patch_v082_vm_entry.py .github/workflows/v082-stability-land.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add CMakeLists.txt include/jau/jau.hpp src/jau_part03.inc src/jauc_main.cpp src/jur_main.cpp src/jauas_main.cpp installer/jau_setup.cpp src/jauld_part03.inc tests/v082_native_main.jau tests/v082_native_string.jau tests/v082_control_flow.jau docs/MAINTAINERS.md
-          git commit -m "Jau 0.8.2: restore native entry semantics and safe AOT"
+          git add CMakeLists.txt include/jau/jau.hpp src/jau_part02b.inc src/jau_part03.inc src/jauc_main.cpp src/jur_main.cpp src/jauas_main.cpp installer/jau_setup.cpp src/jauld_part03.inc tests/v082_native_main.jau tests/v082_native_string.jau tests/v082_control_flow.jau docs/MAINTAINERS.md
+          git commit -m "Jau 0.8.2: restore stable VM/native entry semantics"
           git push origin HEAD:main
