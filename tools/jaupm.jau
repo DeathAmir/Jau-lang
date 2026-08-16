@@ -1,7 +1,16 @@
 import "pkg.jau"
 
+/*
+    Jau Package Manager 0.7
+
+    Protected source packages remain the default JAUPKG2 format. Native packages
+    may additionally carry a platform runtime selected by runtime_<platform>_<arch>
+    in jau.pkg. The selected DLL/SO is staged beside the opaque installed archive
+    so Jau VM code can load it through the standard ffi.jau module.
+*/
+
 func usage() {
-    print("JauPM 0.6");
+    print("JauPM 0.7");
     print("  jaupm help");
     print("  jaupm version");
     print("  jaupm init NAME");
@@ -15,6 +24,7 @@ func usage() {
     print("  jaupm remove NAME");
     print("  jaupm list");
     print("  jaupm where NAME");
+    print("  jaupm runtime NAME");
     print("  jaupm registry");
     print("  jaupm config get registry");
     print("  jaupm config set registry URL");
@@ -32,13 +42,8 @@ func ensure_root() {
     return h;
 }
 
-func config_path() {
-    return path_join(package_home(), "jaupm.conf");
-}
-
-func default_registry() {
-    return "https://irautox.ir/package";
-}
+func config_path() { return path_join(package_home(), "jaupm.conf"); }
+func default_registry() { return "https://irautox.ir/package"; }
 
 func strip_trailing_slash(value) {
     let out = trim(value);
@@ -59,17 +64,12 @@ func registry_base() {
     return default_registry();
 }
 
-func registry_url(name) {
-    return registry_base() + "/" + name;
-}
+func registry_url(name) { return registry_base() + "/" + name; }
 
 func config_set_registry(url) {
     ensure_root();
     let value = strip_trailing_slash(url);
-    if (value == "") {
-        print("JauPM: registry URL cannot be empty");
-        return 1;
-    }
+    if (value == "") { print("JauPM: registry URL cannot be empty"); return 1; }
     write_file(config_path(), "registry=\"" + value + "\"\n");
     print("Registry: " + value);
     return 0;
@@ -85,68 +85,88 @@ func show_manifest(text) {
     if (description != "") { print("description: " + description); }
     let dependencies = manifest_value(text, "dependencies");
     if (dependencies != "") { print("dependencies: " + dependencies); }
+    let runtime = manifest_value(text, "runtime_" + platform() + "_" + arch());
+    if (runtime != "") { print("runtime: " + runtime); }
     return 0;
 }
 
 func pack_package(output) {
-    if (!file_exists("jau.pkg")) {
-        print("JauPM: jau.pkg not found in current directory");
-        return 1;
-    }
+    if (!file_exists("jau.pkg")) { print("JauPM: jau.pkg not found in current directory"); return 1; }
     let manifest = read_file("jau.pkg");
     let name = manifest_value(manifest, "name");
     let version = manifest_value(manifest, "version");
     let main = manifest_value(manifest, "main");
-    if (name == "" || version == "" || main == "") {
-        print("JauPM: jau.pkg requires name, version and main");
+    if (name == "" || version == "" || main == "") { print("JauPM: jau.pkg requires name, version and main"); return 1; }
+    if (!file_exists(main)) { print("JauPM: package main does not exist: " + main); return 1; }
+
+    let runtime = manifest_value(manifest, "runtime_" + platform() + "_" + arch());
+    if (runtime != "" && !file_exists(runtime)) {
+        print("JauPM: declared native runtime does not exist: " + runtime);
         return 1;
     }
-    if (!file_exists(main)) {
-        print("JauPM: package main does not exist: " + main);
-        return 1;
-    }
+
     mkdir("dist");
     if (output == "") { output = path_join("dist", name + "-" + version + ".jaup"); }
-    print("Packing protected binary package " + name + "@" + version + "...");
+    print("Packing protected package " + name + "@" + version + "...");
     let result = jaup_pack(cwd(), output);
-    if (!jaup_verify(output)) {
-        print("JauPM: package self-verification failed");
-        return 1;
-    }
+    if (!jaup_verify(output)) { print("JauPM: package self-verification failed"); return 1; }
     print("Built " + result + " -> " + output);
     print("Size: " + str(file_size(output)) + " bytes");
-    print("Format: JAUPKG2 protected binary payload");
+    print("Format: JAUPKG2 protected payload");
+    if (runtime != "") { print("Native runtime: " + runtime); }
     return 0;
 }
 
-func installed_archive(name) {
-    return package_archive(name);
+func installed_archive(name) { return package_archive(name); }
+
+func stage_native_runtime(stored, dir, manifest, name, version) {
+    let member = manifest_value(manifest, "runtime_" + platform() + "_" + arch());
+    if (member == "") { return ""; }
+
+    let staging = path_join(temp_dir(), "jaupm-runtime-" + str(hash64(name + version + member + str(clock_ns()))));
+    if (file_exists(staging)) { remove_tree(staging); }
+    mkdir(staging);
+    jaup_extract(stored, staging);
+
+    let source = path_join(staging, member);
+    if (!file_exists(source)) {
+        remove_tree(staging);
+        print("JauPM: runtime member missing from package: " + member);
+        return "!error";
+    }
+
+    let output = "";
+    if (platform() == "windows") { output = path_join(dir, "runtime.dll"); }
+    else if (platform() == "linux") { output = path_join(dir, "runtime.so"); }
+    else {
+        remove_tree(staging);
+        print("JauPM: native runtime staging is not supported on " + platform());
+        return "!error";
+    }
+
+    write_file(output, read_file(source));
+    remove_tree(staging);
+    if (!file_exists(output) || file_size(output) <= 0) {
+        print("JauPM: failed to stage native runtime");
+        return "!error";
+    }
+    return output;
 }
 
-func install_archive(archive, source) {
+func install_archive(archive, origin) {
     ensure_root();
-    if (!file_exists(archive)) {
-        print("JauPM: package file not found: " + archive);
-        return 1;
-    }
-    if (!jaup_verify(archive)) {
-        print("JauPM: package verification failed");
-        return 1;
-    }
+    if (!file_exists(archive)) { print("JauPM: package file not found: " + archive); return 1; }
+    if (!jaup_verify(archive)) { print("JauPM: package verification failed"); return 1; }
+
     let manifest = jaup_manifest(archive);
     let name = manifest_value(manifest, "name");
     let version = manifest_value(manifest, "version");
     let main = manifest_value(manifest, "main");
-    if (name == "" || version == "" || main == "") {
-        print("JauPM: invalid package manifest");
-        return 1;
-    }
+    if (name == "" || version == "" || main == "") { print("JauPM: invalid package manifest"); return 1; }
+
     let dir = package_dir(name);
     if (file_exists(dir)) { remove_tree(dir); }
     mkdir(dir);
-
-    // Keep the installed package opaque. The compiler reads source modules
-    // directly from this protected archive in memory during import expansion.
     let stored = path_join(dir, "package.jaup");
     write_file(stored, read_file(archive));
     if (!jaup_verify(stored)) {
@@ -154,6 +174,9 @@ func install_archive(archive, source) {
         print("JauPM: installed archive verification failed");
         return 1;
     }
+
+    let runtime = stage_native_runtime(stored, dir, manifest, name, version);
+    if (runtime == "!error") { remove_tree(dir); return 1; }
 
     let dependencies = manifest_value(manifest, "dependencies");
     if (dependencies != "") {
@@ -164,10 +187,7 @@ func install_archive(archive, source) {
             if (dep != "" && !package_installed(dep)) {
                 print("Installing dependency: " + dep);
                 let rc = install_target(dep, "");
-                if (rc != 0) {
-                    print("JauPM: dependency installation failed: " + dep);
-                    return 1;
-                }
+                if (rc != 0) { print("JauPM: dependency installation failed: " + dep); return 1; }
             }
             i = i + 1;
         }
@@ -178,18 +198,20 @@ func install_archive(archive, source) {
         "name=\"" + name + "\"\n" +
         "version=\"" + version + "\"\n" +
         "main=\"" + main + "\"\n" +
-        "source=\"" + source + "\"\n"
+        "source=\"" + origin + "\"\n" +
+        "runtime=\"" + runtime + "\"\n"
     );
 
     print("Installed " + name + "@" + version);
     print("Protected archive: " + stored);
+    if (runtime != "") { print("Native runtime: " + runtime); }
     return 0;
 }
 
 func cache_name(hint) {
     let name = hint;
     if (name == "") { name = "download"; }
-    return str(hash64(name + str(clock()))) + ".jaup";
+    return str(hash64(name + str(clock_ns()))) + ".jaup";
 }
 
 func download_archive(url, hint) {
@@ -197,10 +219,7 @@ func download_archive(url, hint) {
     let target = path_join(path_join(package_home(), "cache"), cache_name(hint));
     print("Downloading package: " + url);
     download(url, target);
-    if (!file_exists(target)) {
-        print("JauPM: download did not create a package file");
-        return "";
-    }
+    if (!file_exists(target)) { print("JauPM: download did not create a package file"); return ""; }
     if (!jaup_verify(target)) {
         remove_file(target);
         print("JauPM: downloaded data is not a valid .jaup package");
@@ -216,17 +235,12 @@ func install_target(spec, url) {
         if (archive == "") { return 1; }
         return install_archive(archive, url);
     }
-
-    if (file_exists(spec)) {
-        return install_archive(spec, spec);
-    }
-
+    if (file_exists(spec)) { return install_archive(spec, spec); }
     if (contains(spec, "://")) {
         let archive = download_archive(spec, "remote");
         if (archive == "") { return 1; }
         return install_archive(archive, spec);
     }
-
     let remote = registry_url(spec);
     let archive = download_archive(remote, spec);
     if (archive == "") { return 1; }
@@ -237,19 +251,13 @@ func install_manifest(url) {
     let text = http_get(url);
     let name = manifest_value(text, "name");
     let source = manifest_value(text, "source");
-    if (name == "" || source == "") {
-        print("JauPM: manifest requires name and source");
-        return 1;
-    }
+    if (name == "" || source == "") { print("JauPM: manifest requires name and source"); return 1; }
     return install_target(name, source);
 }
 
 func remove_package(name) {
     let dir = package_dir(name);
-    if (!file_exists(dir)) {
-        print("JauPM: package is not installed: " + name);
-        return 1;
-    }
+    if (!file_exists(dir)) { print("JauPM: package is not installed: " + name); return 1; }
     remove_tree(dir);
     print("Removed " + name);
     return 0;
@@ -265,10 +273,10 @@ func list_packages() {
         let archive = package_archive(items[i]);
         if (file_exists(archive)) {
             let text = jaup_manifest(archive);
-            print(items[i] + "@" + manifest_value(text, "version") + " [protected]");
-        } else {
-            print(items[i] + " [legacy]");
-        }
+            let suffix = " [protected]";
+            if (package_has_runtime(items[i])) { suffix = " [protected+native]"; }
+            print(items[i] + "@" + manifest_value(text, "version") + suffix);
+        } else { print(items[i] + " [legacy]"); }
         i = i + 1;
     }
     return 0;
@@ -288,19 +296,10 @@ func init_package(name) {
         "dependencies=\"\"\n";
     write_file("jau.pkg", manifest);
     if (!file_exists("src/main.jau")) {
-        write_file(
-            "src/main.jau",
-            "namespace " + name + " {\n" +
-            "    func hello(who) { return \"hello \" + who + \" from " + name + "\"; }\n" +
-            "}\n"
-        );
+        write_file("src/main.jau", "namespace " + name + " {\n    func hello(who) { return \"hello \" + who + \" from " + name + "\"; }\n}\n");
     }
     if (!file_exists("tests/test.jau")) {
-        write_file(
-            "tests/test.jau",
-            "import \"../src/main.jau\"\n" +
-            "print(" + name + ".hello[\"Jau\"]);\n"
-        );
+        write_file("tests/test.jau", "import \"../src/main.jau\"\nprint(" + name + ".hello[\"Jau\"]);\n");
     }
     print("Created package " + name);
     print("  jau.pkg");
@@ -316,13 +315,12 @@ func info_target(target) {
         return 0;
     }
     let archive = installed_archive(target);
-    if (!file_exists(archive)) {
-        print("JauPM: package not found: " + target);
-        return 1;
-    }
+    if (!file_exists(archive)) { print("JauPM: package not found: " + target); return 1; }
     show_manifest(jaup_manifest(archive));
     print("archive: " + archive);
     print("protected: true");
+    let runtime = package_runtime(target);
+    if (runtime != "") { print("runtime-path: " + runtime); }
     return 0;
 }
 
@@ -340,10 +338,7 @@ func verify_archive(path) {
 
 func where_package(name) {
     let archive = installed_archive(name);
-    if (!file_exists(archive)) {
-        print("JauPM: package is not installed: " + name);
-        return 1;
-    }
+    if (!file_exists(archive)) { print("JauPM: package is not installed: " + name); return 1; }
     let main = manifest_value(jaup_manifest(archive), "main");
     print(archive + "#" + main);
     return 0;
@@ -351,13 +346,14 @@ func where_package(name) {
 
 func doctor() {
     ensure_root();
-    print("JauPM 0.6 doctor");
+    print("JauPM 0.7 doctor");
     print("platform: " + platform());
     print("arch: " + arch());
     print("JAU_HOME: " + package_home());
     print("registry: " + registry_base());
     print("packages: " + str(len(list_dir(path_join(package_home(), "packages")))));
-    print("package format: JAUPKG2 protected binary");
+    print("package format: JAUPKG2 protected payload");
+    print("native VM bridge: DLL/SO runtime sidecar + ffi.jau");
     return 0;
 }
 
@@ -365,7 +361,7 @@ if (argc() == 0) { usage(); }
 else {
     let cmd = arg(0);
     if (cmd == "help" || cmd == "--help" || cmd == "-h") { usage(); }
-    else if (cmd == "version" || cmd == "--version") { print("JauPM 0.6"); }
+    else if (cmd == "version" || cmd == "--version") { print("JauPM 0.7"); }
     else if (cmd == "init" || cmd == "new") {
         if (argc() < 2) { usage(); } else { init_package(arg(1)); }
     } else if (cmd == "pack") {
@@ -387,18 +383,13 @@ else {
         if (argc() < 2) { usage(); } else { info_target(arg(1)); }
     } else if (cmd == "unpack") {
         if (argc() < 3) { usage(); }
-        else {
-            mkdir(arg(2));
-            jaup_extract(arg(1), arg(2));
-            print("Extracted -> " + arg(2));
-        }
+        else { mkdir(arg(2)); jaup_extract(arg(1), arg(2)); print("Extracted -> " + arg(2)); }
     } else if (cmd == "update" || cmd == "upgrade") {
         if (argc() < 2) { usage(); } else { install_target(arg(1), ""); }
     } else if (cmd == "remove" || cmd == "uninstall") {
         if (argc() < 2) { usage(); } else { remove_package(arg(1)); }
-    } else if (cmd == "registry") {
-        print(registry_base());
-    } else if (cmd == "config") {
+    } else if (cmd == "registry") { print(registry_base()); }
+    else if (cmd == "config") {
         if (argc() < 3) { usage(); }
         else if (arg(1) == "get" && arg(2) == "registry") { print(registry_base()); }
         else if (arg(1) == "set" && arg(2) == "registry") {
@@ -413,6 +404,13 @@ else {
     else if (cmd == "list" || cmd == "ls") { list_packages(); }
     else if (cmd == "where") {
         if (argc() < 2) { usage(); } else { where_package(arg(1)); }
+    } else if (cmd == "runtime") {
+        if (argc() < 2) { usage(); }
+        else {
+            let runtime = package_runtime(arg(1));
+            if (runtime == "") { print("JauPM: package has no runtime for this platform"); }
+            else { print(runtime); }
+        }
     } else if (cmd == "doctor" || cmd == "env") { doctor(); }
     else { print("JauPM: unknown command: " + cmd); usage(); }
 }
