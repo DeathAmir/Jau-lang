@@ -1,0 +1,135 @@
+name: release-v081
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-v081.yml'
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Windows x64
+        shell: pwsh
+        run: |
+          cmake -S . -B build -A x64 -DJAU_ENABLE_ASM_FASTOPS=OFF
+          cmake --build build --config Release --parallel 2
+          $v = & .\build\Release\jauc.exe --version
+          if ($v -ne '0.8.1') { throw "unexpected x64 version: $v" }
+          & .\build\Release\jauc.exe native tests\v081_syntax.jau -o syntax-release-x64.exe --target windows-x86_64 -O3
+          $out = @(& .\syntax-release-x64.exe)
+          if (($out -join ',') -ne '10,157,-1') { throw "x64 syntax smoke failed: $out" }
+
+      - name: Build Windows x86
+        shell: pwsh
+        run: |
+          cmake -S . -B build32 -A Win32 -DJAU_ENABLE_ASM_FASTOPS=OFF
+          cmake --build build32 --config Release --parallel 2
+          $v = & .\build32\Release\jauc.exe --version
+          if ($v -ne '0.8.1') { throw "unexpected x86 version: $v" }
+          & .\build32\Release\jauc.exe native tests\v081_syntax.jau -o syntax-release-x86.exe --target windows-x86 -O3
+          $out = @(& .\syntax-release-x86.exe)
+          if (($out -join ',') -ne '10,157,-1') { throw "x86 syntax smoke failed: $out" }
+
+      - name: Build MathX native objects x64 and x86
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force mathsrc | Out-Null
+          Copy-Item tests\native_mathx\mathx.cpp mathsrc\mathx.cpp
+          @'
+          cmake_minimum_required(VERSION 3.16)
+          project(MathX LANGUAGES CXX)
+          add_library(mathx OBJECT mathx.cpp)
+          '@ | Set-Content -Encoding utf8 mathsrc\CMakeLists.txt
+          cmake -S mathsrc -B mathbuild64 -A x64
+          cmake --build mathbuild64 --config Release --parallel 2
+          cmake -S mathsrc -B mathbuild32 -A Win32
+          cmake --build mathbuild32 --config Release --parallel 2
+          $o64=Get-ChildItem mathbuild64 -Recurse -Filter mathx.obj | Select-Object -First 1
+          $o32=Get-ChildItem mathbuild32 -Recurse -Filter mathx.obj | Select-Object -First 1
+          if(!$o64 -or !$o32){ throw 'MathX object build failed' }
+          New-Item -ItemType Directory -Force mathpkg\src,mathpkg\native\windows-x86_64,mathpkg\native\windows-x86 | Out-Null
+          Copy-Item tests\native_mathx\jau.pkg mathpkg\jau.pkg
+          Copy-Item tests\native_mathx\src\main.jau mathpkg\src\main.jau
+          Copy-Item $o64.FullName mathpkg\native\windows-x86_64\mathx.obj
+          Copy-Item $o32.FullName mathpkg\native\windows-x86\mathx.obj
+
+      - name: Validate MathX jaux x64 and x86
+        shell: pwsh
+        run: |
+          $pm64=(Resolve-Path .\build\Release\jaupm.exe).Path
+          $j64=(Resolve-Path .\build\Release\jauc.exe).Path
+          $j32=(Resolve-Path .\build32\Release\jauc.exe).Path
+          Push-Location mathpkg
+          & $pm64 pack dist\MathX-1.0.0.jaux
+          & $pm64 verify dist\MathX-1.0.0.jaux
+          Pop-Location
+          $env:JAU_HOME="$PWD\release-mathx-home"
+          & $pm64 install .\mathpkg\dist\MathX-1.0.0.jaux
+          & $j64 asm tests\native_mathx_consumer.jau -o mathx-release64.s --target windows-x86_64 --debug 2> mathx64-debug.txt
+          if($LASTEXITCODE -ne 0){ Get-Content mathx64-debug.txt; throw 'MathX x64 AOT failed' }
+          if(!(Select-String mathx-release64.s -Pattern 'call mx_add' -Quiet)){ throw 'x64 did not emit call mx_add' }
+          & $j64 native tests\native_mathx_consumer.jau -o mathx-release64.exe --target windows-x86_64 --debug
+          if($LASTEXITCODE -ne 0){ throw 'MathX x64 native failed' }
+          $r64=@(& .\mathx-release64.exe)
+          if(($r64 -join ',') -ne '42,42,1024'){ throw "MathX x64 mismatch: $r64" }
+          & $j32 asm tests\native_mathx_consumer.jau -o mathx-release32.s --target windows-x86 --debug 2> mathx32-debug.txt
+          if($LASTEXITCODE -ne 0){ Get-Content mathx32-debug.txt; throw 'MathX x86 AOT failed' }
+          & $j32 native tests\native_mathx_consumer.jau -o mathx-release32.exe --target windows-x86 --debug
+          if($LASTEXITCODE -ne 0){ throw 'MathX x86 native failed' }
+          $r32=@(& .\mathx-release32.exe)
+          if(($r32 -join ',') -ne '42,42,1024'){ throw "MathX x86 mismatch: $r32" }
+
+      - name: Stage release archives
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release\x64\stdlib,release\x64\tools,release\x64\bootstrap,release\x64\packages,release\x64\docs | Out-Null
+          New-Item -ItemType Directory -Force release\x86\stdlib,release\x86\tools,release\x86\bootstrap,release\x86\packages,release\x86\docs | Out-Null
+          Copy-Item build\Release\jauc.exe,build\Release\jur.exe,build\Release\jauas.exe,build\Release\jauld.exe,build\Release\jaupm.exe,build\Release\jau-setup.exe release\x64\
+          Copy-Item build32\Release\jauc.exe,build32\Release\jur.exe,build32\Release\jauas.exe,build32\Release\jauld.exe,build32\Release\jaupm.exe,build32\Release\jau-setup.exe release\x86\
+          Copy-Item stdlib\* release\x64\stdlib\
+          Copy-Item stdlib\* release\x86\stdlib\
+          Copy-Item tools\jaupm.jau release\x64\tools\
+          Copy-Item tools\jaupm.jau release\x86\tools\
+          Copy-Item bootstrap\jauc_stage1.jau release\x64\bootstrap\
+          Copy-Item bootstrap\jauc_stage1.jau release\x86\bootstrap\
+          Copy-Item -Recurse packages\JTTP release\x64\packages\
+          Copy-Item -Recurse packages\JTTP release\x86\packages\
+          Copy-Item docs\*.md release\x64\docs\
+          Copy-Item docs\*.md release\x86\docs\
+          Copy-Item README.md release\x64\
+          Copy-Item README.md release\x86\
+          Compress-Archive -Path release\x64\* -DestinationPath Jau-0.8.1-windows-x64.zip -Force
+          Compress-Archive -Path release\x86\* -DestinationPath Jau-0.8.1-windows-x86.zip -Force
+          $x64=(Get-FileHash Jau-0.8.1-windows-x64.zip -Algorithm SHA256).Hash.ToLower()
+          $x86=(Get-FileHash Jau-0.8.1-windows-x86.zip -Algorithm SHA256).Hash.ToLower()
+          "Jau-0.8.1-windows-x64.zip  $x64`nJau-0.8.1-windows-x86.zip  $x86" | Set-Content SHA256SUMS.txt
+          Get-Content SHA256SUMS.txt
+
+      - name: Create GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          @'
+          Jau 0.8.1 fixes native C/C++ calls from namespace package facades and expands the language syntax.
+
+          Highlights:
+          - `extern func` inside a namespace now keeps its raw C ABI name instead of being namespace-prefixed.
+          - AOT accepts and emits calls for native symbols discovered from `.jaux` COFF objects.
+          - Namespace-relative Jau calls work in both VM and AOT backends.
+          - Exact MathX package flow validated on Windows x64 and x86: C++ -> OBJ -> JAUX -> install -> AOT -> internal `jauld` -> EXE.
+          - Added `def` / `function`, `nil`, `and` / `or` / `not`.
+          - Added integer bitwise operators `& | ^ ~`, shifts `<< >>`, hex/binary/octal literals, and numeric separators.
+          - Extended `jauas` so the new integer syntax works in native AOT builds, not only VM mode.
+          - Existing `for`, `++`, `--`, compound assignments, `fn`, `var`, block comments, debugger and package diagnostics remain supported.
+
+          Native C/C++ integer ABI note: Jau `int` currently follows the target machine word, so use a C ABI type such as `intptr_t` for portable x86/x64 native extensions.
+
+          See `docs/V081.md` for details.
+          '@ | Set-Content release-notes.md
+          gh release create v0.8.1 Jau-0.8.1-windows-x64.zip Jau-0.8.1-windows-x86.zip SHA256SUMS.txt --target $env:GITHUB_SHA --title "Jau 0.8.1 - Native Calls & Expanded Syntax" --notes-file release-notes.md
