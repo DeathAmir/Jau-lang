@@ -1,0 +1,30 @@
+import "pkg:JGui"
+
+func main() {
+    if (!JGui.available()) {
+        print("JGui runtime is not installed for this platform");
+        return 1;
+    }
+    if (!JGui.init("Jau + Dear ImGui", 960, 640)) {
+        print("JGui initialization failed");
+        return 2;
+    }
+
+    let enabled = true;
+    let value = 25;
+    while (JGui.begin_frame()) {
+        JGui.begin_window("JGui Demo");
+        JGui.text("Cross-platform UI from Jau");
+        JGui.separator();
+        if (JGui.button("Print 42")) { print(42); }
+        JGui.same_line();
+        if (JGui.button("Show ImGui Demo")) { JGui.demo_window(); }
+        enabled = JGui.checkbox("Enabled", enabled);
+        value = JGui.slider_int("Value", value, 0, 100);
+        JGui.end_window();
+        JGui.render();
+    }
+
+    JGui.shutdown();
+    return 0;
+}
