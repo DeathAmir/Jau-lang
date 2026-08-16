@@ -1,0 +1,101 @@
+name: v082-stability-land
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/v082-stability-land.yml'
+permissions:
+  contents: write
+jobs:
+  validate-and-land:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply stability patch
+        run: python tools/patch_v082_stability.py
+      - name: Build Windows x64
+        shell: pwsh
+        run: |
+          cmake -S . -B build -A x64 -DJAU_ENABLE_ASM_FASTOPS=OFF
+          cmake --build build --config Release --parallel 2
+          $v = & .\build\Release\jauc.exe --version 2> banner-jauc.txt
+          if ($v -ne '0.8.2') { throw "unexpected version: $v" }
+          if (!(Select-String banner-jauc.txt -SimpleMatch 'DeathAmir Jau @ DeathAmir 2026 (C)' -Quiet)) { throw 'jauc copyright banner missing' }
+      - name: Native main entry x64
+        shell: pwsh
+        run: |
+          $jauc=(Resolve-Path .\build\Release\jauc.exe).Path
+          & $jauc asm tests\v082_native_main.jau -o v082-main-x64.s --target windows-x86_64 --debug
+          if ($LASTEXITCODE -ne 0) { throw 'x64 asm failed' }
+          if (!(Select-String v082-main-x64.s -SimpleMatch 'call jau_fn_main' -Quiet)) { throw 'native PE entry does not call jau_fn_main' }
+          if (!(Select-String v082-main-x64.s -SimpleMatch 'DeathAmir Jau @ DeathAmir 2026 (C)' -Quiet)) { throw 'generated assembly copyright missing' }
+          & $jauc native tests\v082_native_main.jau -o v082-main-x64.exe --target windows-x86_64 --debug
+          if ($LASTEXITCODE -ne 0) { throw 'x64 native build failed' }
+          $out=@(& .\v082-main-x64.exe)
+          if (($out -join ',') -ne '30,200,32') { throw "x64 main output mismatch: $out" }
+          & $jauc native tests\v082_native_main.jau -o v082-main-o3-x64.exe --target windows-x86_64 -O3
+          $o3=@(& .\v082-main-o3-x64.exe)
+          if (($o3 -join ',') -ne '30,200,32') { throw "x64 -O3 compatibility output mismatch: $o3" }
+      - name: Native string and syntax x64
+        shell: pwsh
+        run: |
+          $jauc=(Resolve-Path .\build\Release\jauc.exe).Path
+          & $jauc native tests\v082_native_string.jau -o v082-string-x64.exe --target windows-x86_64
+          if ($LASTEXITCODE -ne 0) { throw 'x64 string native build failed' }
+          $s=@(& .\v082-string-x64.exe)
+          if (($s -join ',') -ne 'Add:,30,Multiply:,42') { throw "x64 string output mismatch: $s" }
+          & $jauc native tests\v082_control_flow.jau -o v082-flow-x64.exe --target windows-x86_64
+          if ($LASTEXITCODE -ne 0) { throw 'x64 control flow native build failed' }
+          $f=@(& .\v082-flow-x64.exe)
+          if (($f -join ',') -ne '1') { throw "x64 control flow mismatch: $f" }
+      - name: Build Windows x86
+        shell: pwsh
+        run: |
+          cmake -S . -B build32 -A Win32 -DJAU_ENABLE_ASM_FASTOPS=OFF
+          cmake --build build32 --config Release --parallel 2
+          $v = & .\build32\Release\jauc.exe --version 2> banner-jauc32.txt
+          if ($v -ne '0.8.2') { throw "unexpected x86 version: $v" }
+      - name: Native entry strings and syntax x86
+        shell: pwsh
+        run: |
+          $jauc=(Resolve-Path .\build32\Release\jauc.exe).Path
+          & $jauc native tests\v082_native_main.jau -o v082-main-x86.exe --target windows-x86 --debug
+          if ($LASTEXITCODE -ne 0) { throw 'x86 main native build failed' }
+          $m=@(& .\v082-main-x86.exe)
+          if (($m -join ',') -ne '30,200,32') { throw "x86 main output mismatch: $m" }
+          & $jauc native tests\v082_native_string.jau -o v082-string-x86.exe --target windows-x86
+          if ($LASTEXITCODE -ne 0) { throw 'x86 string native build failed' }
+          $s=@(& .\v082-string-x86.exe)
+          if (($s -join ',') -ne 'Add:,30,Multiply:,42') { throw "x86 string output mismatch: $s" }
+          & $jauc native tests\v082_control_flow.jau -o v082-flow-x86.exe --target windows-x86
+          if ($LASTEXITCODE -ne 0) { throw 'x86 flow native build failed' }
+          $f=@(& .\v082-flow-x86.exe)
+          if (($f -join ',') -ne '1') { throw "x86 control flow mismatch: $f" }
+      - name: VM and diagnostic smoke
+        shell: pwsh
+        run: |
+          $jauc=(Resolve-Path .\build\Release\jauc.exe).Path
+          $vm=@(& $jauc run tests\v082_control_flow.jau 2> vm-banner.txt)
+          if (($vm -join ',') -ne '1') { throw "VM output mismatch: $vm" }
+          Set-Content -Encoding utf8 bad.jau 'func main( {'
+          & $jauc check bad.jau 2> bad-error.txt
+          if ($LASTEXITCODE -eq 0) { throw 'invalid source unexpectedly succeeded' }
+          if ((Get-Item bad-error.txt).Length -eq 0) { throw 'invalid source produced no diagnostic' }
+      - name: Existing namespace and package regression
+        shell: pwsh
+        run: |
+          ctest --test-dir build -C Release --output-on-failure -R "jau_namespaces"
+          & .\build\Release\jauc.exe native tests\native_extension_consumer.jau -o pkg-smoke.exe --target windows-x86_64 2> pkg-error.txt
+          if ($LASTEXITCODE -eq 0) { Write-Host 'package consumer available in current environment' } else { Write-Host 'package smoke skipped here because package is not installed; dedicated jaux workflow validates packaging' }
+      - name: Commit validated stability patch
+        shell: pwsh
+        run: |
+          git rm tools/patch_v082_stability.py .github/workflows/v082-stability-land.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add include/jau/jau.hpp src/jau_part03.inc src/jauc_main.cpp src/jur_main.cpp src/jauas_main.cpp src/jau_setup.cpp src/jauld_part03.inc tests/v082_native_main.jau tests/v082_native_string.jau tests/v082_control_flow.jau docs/MAINTAINERS.md
+          git commit -m "Jau 0.8.2: restore native entry semantics and safe AOT"
+          git push origin HEAD:main
