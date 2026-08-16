@@ -272,12 +272,15 @@ static AsmImage assemble_object_text(const std::string&input,const std::string&t
             throw std::runtime_error("unsupported mov: "+line);
         }
 
-        if(starts(line,"add ")||starts(line,"sub ")||starts(line,"or ")||starts(line,"cmp ")||starts(line,"test ")){
+        if(line=="and al,cl"||line=="and al, cl"){o.insert(o.end(),{0x20,0xc8});continue;}
+        if(line=="xor eax,eax"||line=="xor eax, eax"){o.insert(o.end(),{0x31,0xc0});continue;}
+
+        if(starts(line,"add ")||starts(line,"sub ")||starts(line,"and ")||starts(line,"or ")||starts(line,"xor ")||starts(line,"cmp ")||starts(line,"test ")){
             auto sp=line.find(' ');std::string op=line.substr(0,sp);auto [dst,src]=operands(line,sp+1);
             int dr=im.x64?reg64(dst):reg32(dst),sr=im.x64?reg64(src):reg32(src);
             if(dr<0)throw std::runtime_error("unsupported "+op+" destination: "+dst);
             if(sr>=0){
-                uint8_t opc=op=="add"?0x01:op=="sub"?0x29:op=="or"?0x09:op=="cmp"?0x39:0x85;
+                uint8_t opc=op=="add"?0x01:op=="sub"?0x29:op=="and"?0x21:op=="or"?0x09:op=="xor"?0x31:op=="cmp"?0x39:0x85;
                 if(im.x64)rex(o,true,sr,0,dr);o.push_back(opc);o.push_back(modrm(3,sr,dr));continue;
             }
             if(isnum(src)&&(op=="add"||op=="sub"||op=="cmp")){
@@ -300,6 +303,13 @@ static AsmImage assemble_object_text(const std::string&input,const std::string&t
         if(starts(line,"neg ")){
             std::string r=trim(line.substr(4));int rr=im.x64?reg64(r):reg32(r);if(rr<0)throw std::runtime_error("unsupported neg");
             if(im.x64)rex(o,true,3,0,rr);o.push_back(0xf7);o.push_back(modrm(3,3,rr));continue;
+        }
+        if(starts(line,"not ")){
+            std::string r=trim(line.substr(4));int rr=im.x64?reg64(r):reg32(r);if(rr<0)throw std::runtime_error("unsupported not");
+            if(im.x64)rex(o,true,2,0,rr);o.push_back(0xf7);o.push_back(modrm(3,2,rr));continue;
+        }
+        if(starts(line,"shl ")||starts(line,"sar ")){
+            auto sp=line.find(' ');std::string op=line.substr(0,sp);auto [dst,src]=operands(line,sp+1);int rr=im.x64?reg64(dst):reg32(dst);if(rr<0||src!="cl")throw std::runtime_error("unsupported "+op+": "+line);int ext=op=="shl"?4:7;if(im.x64)rex(o,true,0,0,rr);o.push_back(0xd3);o.push_back(modrm(3,ext,rr));continue;
         }
         if(line=="and al,cl"||line=="and al, cl"){o.insert(o.end(),{0x20,0xc8});continue;}
         if(line=="xor eax,eax"||line=="xor eax, eax"){o.insert(o.end(),{0x31,0xc0});continue;}

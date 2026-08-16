@@ -1,0 +1,8 @@
+namespace MathX {
+    extern func mx_add(a:int,b:int):int;
+    extern func mx_mul(a:int,b:int):int;
+    extern func mx_pow(base:int,exp:int):int;
+    func add(a,b) { return mx_add(a,b); }
+    func multiply(a,b) { return mx_mul(a,b); }
+    func power(a,b) { return mx_pow(a,b); }
+}

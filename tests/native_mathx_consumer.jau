@@ -1,0 +1,4 @@
+import "pkg:MathX"
+print(MathX.add[20,22]);
+print(MathX.multiply[6,7]);
+print(MathX.power[2,10]);

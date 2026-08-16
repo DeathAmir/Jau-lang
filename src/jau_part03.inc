@@ -7,7 +7,7 @@ static Program compile_program(const std::string&input,const CompileOptions&o){a
 class AOT {
     std::string target; bool is64=false, win=false, library=false; int optimize=0,label=0; std::ostringstream o;
     std::unordered_map<std::string,Stmt*> funcs; std::unordered_set<std::string> externs; std::vector<std::string> native_symbols;
-    struct Ctx{std::unordered_map<std::string,int> locals,params;int next=0;std::string end;std::vector<std::string> breaks,continues;}; Ctx c;
+    struct Ctx{std::unordered_map<std::string,int> locals,params;int next=0;std::string end,ns;std::vector<std::string> breaks,continues;}; Ctx c;
     std::string L(){return ".L"+std::to_string(label++);} int word()const{return is64?8:4;}
     std::string clean(const std::string&n)const{std::string r;for(unsigned char ch:n)r+=(std::isalnum(ch)||ch=='_')?(char)ch:'_';return r;}
     std::string sym(const std::string&n)const{return "jau_fn_"+clean(n);}
@@ -24,6 +24,7 @@ class AOT {
         for(auto&actual:native_symbols)if(canonical_foreign(actual)==wanted){if(!match.empty()&&match!=actual)return clean(n);match=actual;}
         return match.empty()?clean(n):match;
     }
+    bool has_native_symbol(const std::string&n)const{std::string wanted=canonical_foreign(clean(n));for(auto&actual:native_symbols)if(canonical_foreign(actual)==wanted)return true;return false;}
     int slot(const std::string&n){auto it=c.locals.find(n);if(it!=c.locals.end())return it->second;int q=(++c.next)*word();c.locals[n]=q;return q;}
     void push(const std::string&r){o<<"  push "<<r<<"\n";} void pop(const std::string&r){o<<"  pop "<<r<<"\n";}
     void load_var(const std::string&n){
@@ -88,6 +89,7 @@ class AOT {
         if(e->k==Expr::Unary){
             ex(e->a.get());pop(is64?"rax":"eax");
             if(e->text=="-")o<<"  neg "<<(is64?"rax":"eax")<<"\n";
+            else if(e->text=="~")o<<"  not "<<(is64?"rax":"eax")<<"\n";
             else o<<"  cmp "<<(is64?"rax":"eax")<<",0\n  sete al\n  movzx eax,al\n";
             push(is64?"rax":"eax");return;
         }
@@ -98,6 +100,11 @@ class AOT {
             if(op=="+")o<<"  add "<<(is64?"rax, rcx":"eax, ecx")<<"\n";
             else if(op=="-")o<<"  sub "<<(is64?"rax, rcx":"eax, ecx")<<"\n";
             else if(op=="*")o<<"  imul "<<(is64?"rax, rcx":"eax, ecx")<<"\n";
+            else if(op=="&")o<<"  and "<<(is64?"rax, rcx":"eax, ecx")<<"\n";
+            else if(op=="|")o<<"  or "<<(is64?"rax, rcx":"eax, ecx")<<"\n";
+            else if(op=="^")o<<"  xor "<<(is64?"rax, rcx":"eax, ecx")<<"\n";
+            else if(op=="<<")o<<"  shl "<<(is64?"rax, cl":"eax, cl")<<"\n";
+            else if(op==">>")o<<"  sar "<<(is64?"rax, cl":"eax, cl")<<"\n";
             else if(op=="/"||op=="%"){if(is64)o<<"  cqo\n  idiv rcx\n";else o<<"  cdq\n  idiv ecx\n";if(op=="%")o<<"  mov "<<(is64?"rax, rdx":"eax, edx")<<"\n";}
             else if(op=="&&")o<<"  test "<<(is64?"rax, rax":"eax, eax")<<"\n  setne al\n  movzx eax,al\n  test "<<(is64?"rcx, rcx":"ecx, ecx")<<"\n  setne cl\n  and al,cl\n  movzx eax,al\n";
             else if(op=="||")o<<"  or "<<(is64?"rax, rcx":"eax, ecx")<<"\n  setne al\n  movzx eax,al\n";
@@ -117,9 +124,10 @@ class AOT {
                 o<<"  xor eax,eax\n";push(is64?"rax":"eax");return;
             }
             auto it=funcs.find(n);
+            if(it==funcs.end()&&n.find('.')==std::string::npos&&!c.ns.empty()){std::string q=c.ns+"."+n;it=funcs.find(q);if(it!=funcs.end()){emit_named_call(q,e->args,false);return;}}
             if(it!=funcs.end()){emit_named_call(n,e->args,false);return;}
-            if(externs.count(n)){emit_named_call(n,e->args,true);return;}
-            throw Error("AOT unknown function: "+n);
+            if(externs.count(n)||has_native_symbol(n)){emit_named_call(n,e->args,true);return;}
+            throw Error("AOT unknown function: "+n+" (not a Jau function, extern declaration, or discovered native object symbol)");
         }
         throw Error("AOT unsupported expression");
     }
@@ -135,7 +143,7 @@ class AOT {
         else if(s->k==Stmt::ContinueS){if(c.continues.empty())throw Error("continue outside AOT loop");o<<"  jmp "<<c.continues.back()<<"\n";}
     }
     void emit_func(Stmt*s){
-        c=Ctx{};c.end=L();
+        c=Ctx{};c.end=L();auto dot=s->name.rfind('.');c.ns=dot==std::string::npos?std::string():s->name.substr(0,dot);
         std::string sn=sym(s->name);o<<".globl "<<sn<<"\n"<<sn<<":\n";
         o<<(is64?"  push rbp\n  mov rbp,rsp\n  sub rsp, 1024\n":"  push ebp\n  mov ebp,esp\n  sub esp, 512\n");
         if(is64){
@@ -210,5 +218,5 @@ Result run_embedded_executable(const std::string&exe,const std::vector<std::stri
     std::ifstream in(exe,std::ios::binary);if(!in)throw Error("cannot open executable");in.seekg(0,std::ios::end);auto end=in.tellg();if(end<(std::streamoff)16)throw Error("no embedded Jau payload");in.seekg(end-(std::streamoff)16);uint64_t n=0;char magic[8];in.read((char*)&n,8);in.read(magic,8);if(std::memcmp(magic,"JAUEXEC1",8))throw Error("no embedded Jau payload");if(n>(uint64_t)(end-(std::streamoff)16))throw Error("corrupt embedded payload");in.seekg(end-(std::streamoff)16-(std::streamoff)n);std::vector<char> data((size_t)n);in.read(data.data(),(std::streamsize)n);
     fs::path tmp=fs::temp_directory_path()/("jau_embedded_"+std::to_string(fnv1a64(exe))+".jbc");{std::ofstream o2(tmp,std::ios::binary);o2.write(data.data(),(std::streamsize)data.size());}auto rr=run_bytecode(tmp.string(),args);std::error_code ec;fs::remove(tmp,ec);return rr;
 }catch(const std::exception&e){return {false,e.what()};}}
-std::string version(){return "0.8.0";}
+std::string version(){return "0.8.1";}
 }

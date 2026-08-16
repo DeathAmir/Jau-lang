@@ -92,7 +92,7 @@ static std::string expand_imports_impl(const fs::path& file,const CompileOptions
 }
 static std::string expand_imports(const fs::path& f,const CompileOptions&o){std::unordered_set<std::string>s;return expand_imports_impl(f,o,s);}
 
-enum class TK { End, Id, Num, Str, LParen,RParen,LBrace,RBrace,LBracket,RBracket,Comma,Semi,Colon,Dot,Plus,Minus,Star,Slash,Percent,Bang,Eq,Lt,Gt,EqEq,Ne,Le,Ge,AndAnd,OrOr,
+enum class TK { End, Id, Num, Str, LParen,RParen,LBrace,RBrace,LBracket,RBracket,Comma,Semi,Colon,Dot,Plus,Minus,Star,Slash,Percent,Bang,Eq,Lt,Gt,EqEq,Ne,Le,Ge,AndAnd,OrOr,Amp,Pipe,Caret,Tilde,Shl,Shr,
     PlusEq,MinusEq,StarEq,SlashEq,PercentEq,Inc,Dec,Func,Extern,Namespace,If,Else,While,For,Return,Break,Continue,Let,Const,True,False,Null };
 struct Tok { TK k; std::string text; int line; };
 class Lexer {
@@ -108,13 +108,13 @@ public:
         if(peek()=='#'){while(peek()&&peek()!='\n')get();continue;}
         int ln=line; char c=peek(); if(!c){t.push_back({TK::End,"",ln});break;}
         if(std::isalpha((unsigned char)c)||c=='_'){std::string x;while(std::isalnum((unsigned char)peek())||peek()=='_')x+=get();
-            static const std::unordered_map<std::string,TK> kw={{"func",TK::Func},{"fn",TK::Func},{"extern",TK::Extern},{"namespace",TK::Namespace},{"if",TK::If},{"else",TK::Else},{"while",TK::While},{"for",TK::For},{"return",TK::Return},{"break",TK::Break},{"continue",TK::Continue},{"let",TK::Let},{"var",TK::Let},{"const",TK::Const},{"true",TK::True},{"false",TK::False},{"null",TK::Null}};
-            auto it=kw.find(x); t.push_back({it==kw.end()?TK::Id:it->second,x,ln}); continue;}
-        if(std::isdigit((unsigned char)c)){std::string x;bool dot=false;while(std::isdigit((unsigned char)peek())||(!dot&&peek()=='.')){if(peek()=='.')dot=true;x+=get();}t.push_back({TK::Num,x,ln});continue;}
+            static const std::unordered_map<std::string,TK> kw={{"func",TK::Func},{"fn",TK::Func},{"function",TK::Func},{"def",TK::Func},{"extern",TK::Extern},{"namespace",TK::Namespace},{"if",TK::If},{"else",TK::Else},{"while",TK::While},{"for",TK::For},{"return",TK::Return},{"break",TK::Break},{"continue",TK::Continue},{"let",TK::Let},{"var",TK::Let},{"const",TK::Const},{"true",TK::True},{"false",TK::False},{"null",TK::Null},{"nil",TK::Null},{"and",TK::AndAnd},{"or",TK::OrOr},{"not",TK::Bang}};
+            auto it=kw.find(x);std::string tx=x;if(x=="and")tx="&&";else if(x=="or")tx="||";else if(x=="not")tx="!";t.push_back({it==kw.end()?TK::Id:it->second,tx,ln}); continue;}
+        if(std::isdigit((unsigned char)c)){std::string x;bool dot=false;if(c=='0'&&(peek(1)=='x'||peek(1)=='X')){x+=get();x+=get();while(std::isxdigit((unsigned char)peek())||peek()=='_')x+=get();}else if(c=='0'&&(peek(1)=='b'||peek(1)=='B')){x+=get();x+=get();while(peek()=='0'||peek()=='1'||peek()=='_')x+=get();}else if(c=='0'&&(peek(1)=='o'||peek(1)=='O')){x+=get();x+=get();while((peek()>='0'&&peek()<='7')||peek()=='_')x+=get();}else{while(std::isdigit((unsigned char)peek())||peek()=='_'||(!dot&&peek()=='.')){if(peek()=='.')dot=true;x+=get();}}t.push_back({TK::Num,x,ln});continue;}
         if(c=='\"'){get();std::string x;while(peek()&&peek()!='\"'){char q=get();if(q=='\\'){char e=get();if(e=='n')x+='\n';else if(e=='t')x+='\t';else if(e=='r')x+='\r';else x+=e;}else x+=q;}if(get()!='\"')throw Error("unterminated string at line "+std::to_string(ln));t.push_back({TK::Str,x,ln});continue;}
         auto two=[&](char a,char b,TK kk){if(peek()==a&&peek(1)==b){get();get();t.push_back({kk,std::string()+a+b,ln});return true;}return false;};
-        if(two('=','=',TK::EqEq)||two('!','=',TK::Ne)||two('<','=',TK::Le)||two('>','=',TK::Ge)||two('&','&',TK::AndAnd)||two('|','|',TK::OrOr)||two('+','=',TK::PlusEq)||two('-','=',TK::MinusEq)||two('*','=',TK::StarEq)||two('/','=',TK::SlashEq)||two('%','=',TK::PercentEq)||two('+','+',TK::Inc)||two('-','-',TK::Dec))continue;
-        get(); TK k; switch(c){case '(':k=TK::LParen;break;case ')':k=TK::RParen;break;case '{':k=TK::LBrace;break;case '}':k=TK::RBrace;break;case '[':k=TK::LBracket;break;case ']':k=TK::RBracket;break;case ',':k=TK::Comma;break;case ';':k=TK::Semi;break;case ':':k=TK::Colon;break;case '.':k=TK::Dot;break;case '+':k=TK::Plus;break;case '-':k=TK::Minus;break;case '*':k=TK::Star;break;case '/':k=TK::Slash;break;case '%':k=TK::Percent;break;case '!':k=TK::Bang;break;case '=':k=TK::Eq;break;case '<':k=TK::Lt;break;case '>':k=TK::Gt;break;default:throw Error("unexpected character at line "+std::to_string(ln));}t.push_back({k,std::string(1,c),ln});
+        if(two('=','=',TK::EqEq)||two('!','=',TK::Ne)||two('<','=',TK::Le)||two('>','=',TK::Ge)||two('<','<',TK::Shl)||two('>','>',TK::Shr)||two('&','&',TK::AndAnd)||two('|','|',TK::OrOr)||two('+','=',TK::PlusEq)||two('-','=',TK::MinusEq)||two('*','=',TK::StarEq)||two('/','=',TK::SlashEq)||two('%','=',TK::PercentEq)||two('+','+',TK::Inc)||two('-','-',TK::Dec))continue;
+        get(); TK k; switch(c){case '(':k=TK::LParen;break;case ')':k=TK::RParen;break;case '{':k=TK::LBrace;break;case '}':k=TK::RBrace;break;case '[':k=TK::LBracket;break;case ']':k=TK::RBracket;break;case ',':k=TK::Comma;break;case ';':k=TK::Semi;break;case ':':k=TK::Colon;break;case '.':k=TK::Dot;break;case '+':k=TK::Plus;break;case '-':k=TK::Minus;break;case '*':k=TK::Star;break;case '/':k=TK::Slash;break;case '%':k=TK::Percent;break;case '!':k=TK::Bang;break;case '&':k=TK::Amp;break;case '|':k=TK::Pipe;break;case '^':k=TK::Caret;break;case '~':k=TK::Tilde;break;case '=':k=TK::Eq;break;case '<':k=TK::Lt;break;case '>':k=TK::Gt;break;default:throw Error("unexpected character at line "+std::to_string(ln));}t.push_back({k,std::string(1,c),ln});
     }return t;}
 };
 
@@ -129,7 +129,7 @@ class Parser {
     std::string qualified_id(){std::string n=need(TK::Id,"expected identifier").text;while(eat(TK::Dot))n+="."+need(TK::Id,"expected identifier after .").text;return n;}
     std::unique_ptr<Expr> primary(){
         if(eat(TK::True)){auto e=std::make_unique<Expr>();e->k=Expr::Lit;e->v=true;return e;} if(eat(TK::False)){auto e=std::make_unique<Expr>();e->k=Expr::Lit;e->v=false;return e;} if(eat(TK::Null)){auto e=std::make_unique<Expr>();e->k=Expr::Lit;return e;}
-        if(at(TK::Num)){auto z=cur();++i;auto e=std::make_unique<Expr>();e->k=Expr::Lit;e->v=z.text.find('.')==std::string::npos?Value((int64_t)std::stoll(z.text)):Value(std::stod(z.text));return e;}
+        if(at(TK::Num)){auto z=cur();++i;auto e=std::make_unique<Expr>();e->k=Expr::Lit;try{std::string raw=z.text;raw.erase(std::remove(raw.begin(),raw.end(),'_'),raw.end());if(raw.find('.')!=std::string::npos)e->v=Value(std::stod(raw));else{int base=10;size_t off=0;if(raw.size()>2&&raw[0]=='0'&&(raw[1]=='x'||raw[1]=='X')){base=16;off=2;}else if(raw.size()>2&&raw[0]=='0'&&(raw[1]=='b'||raw[1]=='B')){base=2;off=2;}else if(raw.size()>2&&raw[0]=='0'&&(raw[1]=='o'||raw[1]=='O')){base=8;off=2;}e->v=Value((int64_t)std::stoll(raw.substr(off),nullptr,base));}}catch(...){throw Error("invalid numeric literal '"+z.text+"' at line "+std::to_string(z.line));}return e;}
         if(at(TK::Str)){auto z=cur();++i;auto e=std::make_unique<Expr>();e->k=Expr::Lit;e->v=z.text;return e;}
         if(at(TK::Id)){auto e=std::make_unique<Expr>();e->k=Expr::Var;e->text=qualified_id();return e;}
         if(eat(TK::LBracket)){auto e=std::make_unique<Expr>();e->k=Expr::ArrayLit;if(!at(TK::RBracket)){do{e->args.push_back(expr());}while(eat(TK::Comma));}need(TK::RBracket,"expected ]");return e;}
@@ -138,20 +138,24 @@ class Parser {
     }
     std::unique_ptr<Expr> update_expr(std::unique_ptr<Expr> base,bool inc){if(!base||base->k!=Expr::Var)throw Error("++/-- requires a variable at line "+std::to_string(cur().line));std::string n=base->text;auto lhs=std::make_unique<Expr>();lhs->k=Expr::Var;lhs->text=n;auto one=std::make_unique<Expr>();one->k=Expr::Lit;one->v=(int64_t)1;auto b=std::make_unique<Expr>();b->k=Expr::Binary;b->text=inc?"+":"-";b->a=std::move(lhs);b->b=std::move(one);auto a=std::make_unique<Expr>();a->k=Expr::Assign;a->text=n;a->a=std::move(b);return a;}
     std::unique_ptr<Expr> call(){auto e=primary();for(;;){if(eat(TK::LParen)){auto c=std::make_unique<Expr>();c->k=Expr::Call;c->a=std::move(e);if(!at(TK::RParen)){do{c->args.push_back(expr());}while(eat(TK::Comma));}need(TK::RParen,"expected )");e=std::move(c);continue;}if(eat(TK::LBracket)){if(e->k==Expr::Var&&e->text.find('.')!=std::string::npos){auto c=std::make_unique<Expr>();c->k=Expr::Call;c->a=std::move(e);if(!at(TK::RBracket)){do{c->args.push_back(expr());}while(eat(TK::Comma));}need(TK::RBracket,"expected ]");e=std::move(c);}else{auto n=std::make_unique<Expr>();n->k=Expr::Index;n->a=std::move(e);n->b=expr();need(TK::RBracket,"expected ]");e=std::move(n);}continue;}if(at(TK::Inc)||at(TK::Dec)){bool inc=eat(TK::Inc);if(!inc)need(TK::Dec,"expected --");e=update_expr(std::move(e),inc);continue;}break;}return e;}
-    std::unique_ptr<Expr> unary(){if(at(TK::Inc)||at(TK::Dec)){bool inc=eat(TK::Inc);if(!inc)need(TK::Dec,"expected --");return update_expr(call(),inc);}if(at(TK::Bang)||at(TK::Minus)){std::string op=cur().text;++i;auto e=std::make_unique<Expr>();e->k=Expr::Unary;e->text=op;e->a=unary();return e;}return call();}
+    std::unique_ptr<Expr> unary(){if(at(TK::Inc)||at(TK::Dec)){bool inc=eat(TK::Inc);if(!inc)need(TK::Dec,"expected --");return update_expr(call(),inc);}if(at(TK::Bang)||at(TK::Minus)||at(TK::Tilde)){std::string op=cur().text;++i;auto e=std::make_unique<Expr>();e->k=Expr::Unary;e->text=op;e->a=unary();return e;}return call();}
     template<class Next> std::unique_ptr<Expr> bin(Next next,std::initializer_list<TK> ks){auto e=(this->*next)();for(;;){bool m=false;for(auto k:ks)if(at(k)){m=true;break;}if(!m)break;std::string op=cur().text;++i;auto n=std::make_unique<Expr>();n->k=Expr::Binary;n->text=op;n->a=std::move(e);n->b=(this->*next)();e=std::move(n);}return e;}
     std::unique_ptr<Expr> factor(){return bin(&Parser::unary,{TK::Star,TK::Slash,TK::Percent});}
     std::unique_ptr<Expr> term(){return bin(&Parser::factor,{TK::Plus,TK::Minus});}
-    std::unique_ptr<Expr> cmp(){return bin(&Parser::term,{TK::Lt,TK::Le,TK::Gt,TK::Ge});}
+    std::unique_ptr<Expr> shift(){return bin(&Parser::term,{TK::Shl,TK::Shr});}
+    std::unique_ptr<Expr> cmp(){return bin(&Parser::shift,{TK::Lt,TK::Le,TK::Gt,TK::Ge});}
     std::unique_ptr<Expr> equality(){return bin(&Parser::cmp,{TK::EqEq,TK::Ne});}
-    std::unique_ptr<Expr> land(){return bin(&Parser::equality,{TK::AndAnd});}
+    std::unique_ptr<Expr> band(){return bin(&Parser::equality,{TK::Amp});}
+    std::unique_ptr<Expr> bxor(){return bin(&Parser::band,{TK::Caret});}
+    std::unique_ptr<Expr> bor(){return bin(&Parser::bxor,{TK::Pipe});}
+    std::unique_ptr<Expr> land(){return bin(&Parser::bor,{TK::AndAnd});}
     std::unique_ptr<Expr> lor(){return bin(&Parser::land,{TK::OrOr});}
     std::unique_ptr<Expr> assign(){auto e=lor();if(at(TK::Eq)||at(TK::PlusEq)||at(TK::MinusEq)||at(TK::StarEq)||at(TK::SlashEq)||at(TK::PercentEq)){TK op=cur().k;++i;if(e->k!=Expr::Var)throw Error("assignment target must be a variable at line "+std::to_string(cur().line));std::string n=e->text;auto rhs=assign();auto a=std::make_unique<Expr>();a->k=Expr::Assign;a->text=n;if(op==TK::Eq)a->a=std::move(rhs);else{auto lhs=std::make_unique<Expr>();lhs->k=Expr::Var;lhs->text=n;auto b=std::make_unique<Expr>();b->k=Expr::Binary;b->text=op==TK::PlusEq?"+":op==TK::MinusEq?"-":op==TK::StarEq?"*":op==TK::SlashEq?"/":"%";b->a=std::move(lhs);b->b=std::move(rhs);a->a=std::move(b);}return a;}return e;}
     std::unique_ptr<Expr> expr(){return assign();}
     std::vector<std::unique_ptr<Stmt>> block_body(){need(TK::LBrace,"expected {");std::vector<std::unique_ptr<Stmt>> v;while(!at(TK::RBrace)&&!at(TK::End))v.push_back(stmt());need(TK::RBrace,"expected }");return v;}
     void skip_type_annotation(){if(eat(TK::Colon))qualified_id();}
     std::unique_ptr<Stmt> parse_func(bool external){
-        auto s=std::make_unique<Stmt>();s->k=Stmt::FuncS;s->external=external;s->name=qualified_id();if(!current_namespace.empty()&&s->name.find('.')==std::string::npos)s->name=current_namespace+"."+s->name;need(TK::LParen,"expected (");
+        auto s=std::make_unique<Stmt>();s->k=Stmt::FuncS;s->external=external;s->name=qualified_id();if(!external&&!current_namespace.empty()&&s->name.find('.')==std::string::npos)s->name=current_namespace+"."+s->name;need(TK::LParen,"expected (");
         if(!at(TK::RParen)){do{auto param=need(TK::Id,"expected parameter").text;skip_type_annotation();s->params.push_back(param);}while(eat(TK::Comma));}
         need(TK::RParen,"expected )");skip_type_annotation();
         if(external){need(TK::Semi,"expected ; after extern func");}else s->body=block_body();return s;

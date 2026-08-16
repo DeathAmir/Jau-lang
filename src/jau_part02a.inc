@@ -13,7 +13,7 @@ public:
     std::vector<std::unique_ptr<Stmt>> parse(){std::vector<std::unique_ptr<Stmt>> v;parse_items(v,false);return v;}
 };
 
-enum class Op:uint8_t { Const,Null,LoadG,StoreG,LoadL,StoreL,Pop,Add,Sub,Mul,Div,Mod,Neg,Not,Eq,Ne,Lt,Le,Gt,Ge,And,Or,Jump,JumpFalse,MakeArray,Index,Call,Ret,Halt };
+enum class Op:uint8_t { Const,Null,LoadG,StoreG,LoadL,StoreL,Pop,Add,Sub,Mul,Div,Mod,Neg,Not,BitNot,Eq,Ne,Lt,Le,Gt,Ge,And,Or,BitAnd,BitOr,BitXor,Shl,Shr,Jump,JumpFalse,MakeArray,Index,Call,Ret,Halt };
 struct Ins { Op op; int32_t a=0; };
 struct Fun { std::string name; int32_t arity=0, locals=0; std::vector<Ins> code; };
 struct Program { std::vector<Value> consts; std::vector<std::string> globals; std::vector<Fun> funcs; };
@@ -24,6 +24,11 @@ static std::optional<Value> fold_binary(const std::string&op,const Value&a,const
     if(op=="*") return mulv(a,b);
     if(op=="/") return as_double(a)/as_double(b);
     if(op=="%") return as_int(a)%as_int(b);
+    if(op=="&") return as_int(a)&as_int(b);
+    if(op=="|") return as_int(a)|as_int(b);
+    if(op=="^") return as_int(a)^as_int(b);
+    if(op=="<<") return as_int(a)<<as_int(b);
+    if(op==">>") return as_int(a)>>as_int(b);
     if(op=="==") return a.str()==b.str();
     if(op=="!=") return a.str()!=b.str();
     if(op=="<") return as_double(a)<as_double(b);
@@ -38,7 +43,7 @@ static void become_lit(Expr*e,Value v){e->k=Expr::Lit;e->v=std::move(v);e->a.res
 static void optimize_expr(Expr*e){
     if(!e)return;
     optimize_expr(e->a.get()); optimize_expr(e->b.get()); for(auto&x:e->args)optimize_expr(x.get());
-    if(e->k==Expr::Unary&&e->a&&e->a->k==Expr::Lit){try{if(e->text=="-"){if(std::holds_alternative<int64_t>(e->a->v.data))become_lit(e,Value(-std::get<int64_t>(e->a->v.data)));else become_lit(e,Value(-as_double(e->a->v)));}else become_lit(e,Value(!e->a->v.truthy()));}catch(...){}return;}
+    if(e->k==Expr::Unary&&e->a&&e->a->k==Expr::Lit){try{if(e->text=="-"){if(std::holds_alternative<int64_t>(e->a->v.data))become_lit(e,Value(-std::get<int64_t>(e->a->v.data)));else become_lit(e,Value(-as_double(e->a->v)));}else if(e->text=="~")become_lit(e,Value((int64_t)~as_int(e->a->v)));else become_lit(e,Value(!e->a->v.truthy()));}catch(...){}return;}
     if(e->k!=Expr::Binary||!e->a||!e->b)return;
     if(e->a->k==Expr::Lit&&e->b->k==Expr::Lit){auto v=fold_binary(e->text,e->a->v,e->b->v);if(v){become_lit(e,*v);return;}}
     if(e->text=="+"&&lit_i(e->b.get(),0)){auto n=std::move(e->a);*e=std::move(*n);return;}
@@ -56,7 +61,7 @@ static void optimize_stmts(std::vector<std::unique_ptr<Stmt>>&v){
 }
 
 class BC {
-    Program p; std::unordered_map<std::string,int> fidx,gidx; std::unordered_set<std::string> externs; Fun* f=nullptr; bool top=true; std::unordered_map<std::string,int> locals; int nextlocal=0;
+    Program p; std::unordered_map<std::string,int> fidx,gidx; std::unordered_set<std::string> externs; Fun* f=nullptr; bool top=true; std::string current_ns; std::unordered_map<std::string,int> locals; int nextlocal=0;
     std::unordered_set<std::string> const_globals,const_locals;
     std::vector<std::vector<int>> break_jumps, continue_jumps;
     int c(Value v){p.consts.push_back(std::move(v));return (int)p.consts.size()-1;}

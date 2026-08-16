@@ -1,0 +1,5 @@
+namespace Calc {
+    func helper(a) { return a + 1; }
+    func run(a) { return helper(a); }
+}
+print(Calc.run[41]);
