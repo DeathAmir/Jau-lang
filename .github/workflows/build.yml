@@ -17,7 +17,7 @@ jobs:
       - run: ./build/jauc asm tests/aot_functions.jau -o native-linux-x64.s --target linux-x86_64 && cc -no-pie native-linux-x64.s -o aot-test && printf '720\n1\n3\n4\n' > expected.txt && ./aot-test > actual.txt && diff -u expected.txt actual.txt
       - run: ./build/jauc standalone examples/fibonacci.jau -o jau-example --runtime ./build/jur && test "$(./jau-example)" = "55"
       - run: ./build/jauc run bootstrap/jauc_stage1.jau -- bootstrap/stage2_input.jau zero32.s linux-x86 && ./build/jauas zero32.s -o zero32 --target linux-x86 && file zero32 | grep -q "ELF 32-bit"
-      - run: rm -rf install-test && ./build/jau-setup --prefix "$PWD/install-test" --source-root "$PWD" --no-path && test "$(JAU_HOME="$PWD/install-test" ./install-test/bin/jaupm version)" = "JauPM 0.6" && test -x "$PWD/install-test/bin/jaum"
+      - run: rm -rf install-test && ./build/jau-setup --prefix "$PWD/install-test" --source-root "$PWD" --no-path && test "$(JAU_HOME="$PWD/install-test" ./install-test/bin/jaupm version)" = "JauPM 0.7" && test -x "$PWD/install-test/bin/jaum"
       - name: Stage artifact
         run: |
           mkdir -p dist/stdlib dist/tools dist/bootstrap dist/packages
@@ -54,13 +54,35 @@ jobs:
 
   windows-x64:
     runs-on: windows-latest
-    timeout-minutes: 8
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
       - run: cmake -S . -B build -A x64 -DJAU_ENABLE_ASM_FASTOPS=OFF
       - run: cmake --build build --config Release --parallel 2
       - run: .\build\Release\jauc.exe run examples\hello.jau
       - run: ctest --test-dir build -C Release --output-on-failure -R "jau_namespaces"
+      - name: VM DLL FFI x64
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force ffi-win -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory ffi-win | Out-Null
+          $src = (Resolve-Path .\tests\vm_ffi.cpp).Path.Replace("\","/")
+          Set-Content -Encoding utf8 ffi-win\CMakeLists.txt 'cmake_minimum_required(VERSION 3.16)'
+          Add-Content -Encoding utf8 ffi-win\CMakeLists.txt 'project(JauVmFfi LANGUAGES CXX)'
+          Add-Content -Encoding utf8 ffi-win\CMakeLists.txt "add_library(vmffi SHARED `"$src`")"
+          cmake -S ffi-win -B ffi-win\build -A x64
+          cmake --build ffi-win\build --config Release --parallel 2
+          $dll = (Resolve-Path .\ffi-win\build\Release\vmffi.dll).Path
+          $out = & .\build\Release\jauc.exe run tests\vm_ffi.jau -I stdlib -- $dll
+          if ($out.Count -ne 2 -or $out[0] -ne "42" -or $out[1] -ne "42") { throw "VM DLL FFI failed: $out" }
+      - name: Multi-object native and DLL x64
+        shell: pwsh
+        run: |
+          .\build\Release\jauc.exe native tests\multi_native.jau -o multi-native.exe --target windows-x86_64 --link tests\multi_native_left.cpp --link tests\multi_native_right.cpp
+          $out = & .\multi-native.exe
+          if ($out -ne "42") { throw "multi-object native output mismatch: $out" }
+          .\build\Release\jauc.exe shared tests\multi_native.jau -o multi-native.dll --target windows-x86_64 --link tests\multi_native_left.cpp --link tests\multi_native_right.cpp --export calculate
+          if (!(Test-Path .\multi-native.dll)) { throw "multi-object DLL was not created" }
       - run: .\build\Release\jauc.exe asm tests\aot_functions.jau -o native-windows-x64.s --target windows-x86_64
       - name: Internal PE32+ native linker
         shell: pwsh
@@ -87,7 +109,7 @@ jobs:
           $env:PATH="$PWD\pm-isolated;$env:PATH"
           Push-Location pm-smoke
           $v = & jaupm version
-          if ($v -ne "JauPM 0.6") { throw "standalone JauPM failed when launched by bare PATH name: $v" }
+          if ($v -ne "JauPM 0.7") { throw "standalone JauPM failed when launched by bare PATH name: $v" }
           & jaupm init iRx
           Set-Content -Encoding utf8 .\src\main.jau 'namespace iRx { func add(a, b) { return a + b; } }'
           & jaupm pack
@@ -149,7 +171,7 @@ jobs:
           if (!(Test-Path .\install-test\bin\jaum.exe)) { throw "jaum.exe was not installed" }
           if (Test-Path .\install-test\bin\jaupm.cmd) { throw "stale jaupm.cmd wrapper was installed" }
           $v = & .\install-test\bin\jaupm.exe version
-          if ($v -ne "JauPM 0.6") { throw "installed jaupm.exe failed: $v" }
+          if ($v -ne "JauPM 0.7") { throw "installed jaupm.exe failed: $v" }
       - name: Stage artifact
         shell: pwsh
         run: |
@@ -165,12 +187,34 @@ jobs:
 
   windows-x86:
     runs-on: windows-latest
-    timeout-minutes: 8
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
       - run: cmake -S . -B build32 -A Win32 -DJAU_ENABLE_ASM_FASTOPS=OFF
       - run: cmake --build build32 --config Release --parallel 2
       - run: .\build32\Release\jauc.exe run examples\fibonacci.jau
+      - name: VM DLL FFI x86
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force ffi-win32 -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory ffi-win32 | Out-Null
+          $src = (Resolve-Path .\tests\vm_ffi.cpp).Path.Replace("\","/")
+          Set-Content -Encoding utf8 ffi-win32\CMakeLists.txt 'cmake_minimum_required(VERSION 3.16)'
+          Add-Content -Encoding utf8 ffi-win32\CMakeLists.txt 'project(JauVmFfi32 LANGUAGES CXX)'
+          Add-Content -Encoding utf8 ffi-win32\CMakeLists.txt "add_library(vmffi SHARED `"$src`")"
+          cmake -S ffi-win32 -B ffi-win32\build -A Win32
+          cmake --build ffi-win32\build --config Release --parallel 2
+          $dll = (Resolve-Path .\ffi-win32\build\Release\vmffi.dll).Path
+          $out = & .\build32\Release\jauc.exe run tests\vm_ffi.jau -I stdlib -- $dll
+          if ($out.Count -ne 2 -or $out[0] -ne "42" -or $out[1] -ne "42") { throw "VM DLL x86 FFI failed: $out" }
+      - name: Multi-object native and DLL x86
+        shell: pwsh
+        run: |
+          .\build32\Release\jauc.exe native tests\multi_native.jau -o multi-native32.exe --target windows-x86 --link tests\multi_native_left.cpp --link tests\multi_native_right.cpp
+          $out = & .\multi-native32.exe
+          if ($out -ne "42") { throw "multi-object x86 native output mismatch: $out" }
+          .\build32\Release\jauc.exe shared tests\multi_native.jau -o multi-native32.dll --target windows-x86 --link tests\multi_native_left.cpp --link tests\multi_native_right.cpp --export calculate
+          if (!(Test-Path .\multi-native32.dll)) { throw "multi-object x86 DLL was not created" }
       - run: .\build32\Release\jauc.exe asm examples\native.jau -o native-windows-x86.s --target windows-x86
       - name: Internal PE32 native linker
         shell: pwsh
