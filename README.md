@@ -341,3 +341,5 @@ cmake --build build32 --config Release --parallel 2
 ---
 
 **DeathAmir Jau @ DeathAmir 2026 (C)** · MIT License
+
+By @DeathAmir And @wwwamfamly-blip
