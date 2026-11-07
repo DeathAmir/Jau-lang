@@ -1,0 +1,186 @@
+extern func open_linux_window(title_text: string): int;
+extern func close_linux_window(): void;
+extern func clear_window(): void;
+extern func set_drawing_color(c: int): void;
+extern func fill_rectangle(x: int, y: int, w: int, h: int): void;
+extern func draw_rectangle(x: int, y: int, w: int, h: int): void;
+extern func draw_line(x1: int, y1: int, x2: int, y2: int): void;
+extern func draw_text(x: int, y: int, t: string, c: int, size: int): void;
+extern func draw_text_center(cx: int, y: int, t: string, c: int, size: int): void;
+extern func draw_text_right(rx: int, y: int, t: string, c: int, size: int): void;
+extern func measure_text(t: string, size: int): int;
+extern func flush_display(): void;
+
+extern func get_color_bg(): int;
+extern func get_color_display_bg(): int;
+extern func get_color_display_fg(): int;
+extern func get_color_btn_num(): int;
+extern func get_color_btn_op(): int;
+extern func get_color_btn_fn(): int;
+extern func get_color_btn_eq(): int;
+extern func get_color_btn_clr(): int;
+extern func get_color_border(): int;
+extern func get_color_text_dark(): int;
+extern func get_color_text_light(): int;
+extern func get_color_error(): int;
+extern func get_color_expr_fg(): int;
+
+extern func poll_window_event(): int;
+extern func get_event_x(): int;
+extern func get_event_y(): int;
+extern func get_event_char(): int;
+
+extern func calc_reset(): void;
+extern func calc_digit(d: int): void;
+extern func calc_dot(): void;
+extern func calc_op(op: int): void;
+extern func calc_equal(): void;
+extern func calc_backspace(): void;
+extern func calc_percent(): void;
+extern func calc_sign(): void;
+extern func calc_get_display(): string;
+extern func calc_get_expr(): string;
+extern func calc_has_error(): int;
+
+func draw_button(x: int, y: int, w: int, h: int, label: string, btype: int) {
+    let bg: int = get_color_btn_num();
+    let fg: int = get_color_text_light();
+    if (btype == 1) {
+        bg = get_color_btn_op();
+        fg = get_color_text_dark();
+    }
+    if (btype == 2) {
+        bg = get_color_btn_fn();
+        fg = get_color_text_light();
+    }
+    if (btype == 3) {
+        bg = get_color_btn_eq();
+        fg = get_color_text_dark();
+    }
+    if (btype == 4) {
+        bg = get_color_btn_clr();
+        fg = get_color_text_light();
+    }
+    set_drawing_color(bg);
+    fill_rectangle(x, y, w, h);
+    set_drawing_color(get_color_border());
+    draw_rectangle(x, y, w, h);
+    draw_text_center(x + w / 2, y + h / 2 + 6, label, fg, 1);
+}
+
+func draw_all() {
+    set_drawing_color(get_color_bg());
+    fill_rectangle(0, 0, 360, 560);
+
+    set_drawing_color(get_color_display_bg());
+    fill_rectangle(10, 10, 340, 100);
+    set_drawing_color(get_color_border());
+    draw_rectangle(10, 10, 340, 100);
+
+    draw_text_right(340, 36, calc_get_expr(), get_color_expr_fg(), 0);
+
+    let dc: int = get_color_display_fg();
+    if (calc_has_error() == 1) {
+        dc = get_color_error();
+    }
+    draw_text_right(340, 90, calc_get_display(), dc, 2);
+
+    draw_button( 10, 130, 80, 60, "C", 4);
+    draw_button(100, 130, 80, 60, "<", 2);
+    draw_button(190, 130, 80, 60, "%", 2);
+    draw_button(280, 130, 70, 60, "/", 1);
+
+    draw_button( 10, 200, 80, 60, "7", 0);
+    draw_button(100, 200, 80, 60, "8", 0);
+    draw_button(190, 200, 80, 60, "9", 0);
+    draw_button(280, 200, 70, 60, "*", 1);
+
+    draw_button( 10, 270, 80, 60, "4", 0);
+    draw_button(100, 270, 80, 60, "5", 0);
+    draw_button(190, 270, 80, 60, "6", 0);
+    draw_button(280, 270, 70, 60, "-", 1);
+
+    draw_button( 10, 340, 80, 60, "1", 0);
+    draw_button(100, 340, 80, 60, "2", 0);
+    draw_button(190, 340, 80, 60, "3", 0);
+    draw_button(280, 340, 70, 60, "+", 1);
+
+    draw_button( 10, 410, 80, 60, "+/-", 2);
+    draw_button(100, 410, 80, 60, "0", 0);
+    draw_button(190, 410, 80, 60, ".", 2);
+    draw_button(280, 410, 70, 60, "=", 3);
+
+    flush_display();
+}
+
+func handle_click(mx: int, my: int) {
+    if (mx >= 10 && mx < 90 && my >= 130 && my < 190) { calc_reset(); return; }
+    if (mx >= 100 && mx < 180 && my >= 130 && my < 190) { calc_backspace(); return; }
+    if (mx >= 190 && mx < 270 && my >= 130 && my < 190) { calc_percent(); return; }
+    if (mx >= 280 && mx < 350 && my >= 130 && my < 190) { calc_op(47); return; }
+
+    if (mx >= 10 && mx < 90 && my >= 200 && my < 260) { calc_digit(7); return; }
+    if (mx >= 100 && mx < 180 && my >= 200 && my < 260) { calc_digit(8); return; }
+    if (mx >= 190 && mx < 270 && my >= 200 && my < 260) { calc_digit(9); return; }
+    if (mx >= 280 && mx < 350 && my >= 200 && my < 260) { calc_op(42); return; }
+
+    if (mx >= 10 && mx < 90 && my >= 270 && my < 330) { calc_digit(4); return; }
+    if (mx >= 100 && mx < 180 && my >= 270 && my < 330) { calc_digit(5); return; }
+    if (mx >= 190 && mx < 270 && my >= 270 && my < 330) { calc_digit(6); return; }
+    if (mx >= 280 && mx < 350 && my >= 270 && my < 330) { calc_op(45); return; }
+
+    if (mx >= 10 && mx < 90 && my >= 340 && my < 400) { calc_digit(1); return; }
+    if (mx >= 100 && mx < 180 && my >= 340 && my < 400) { calc_digit(2); return; }
+    if (mx >= 190 && mx < 270 && my >= 340 && my < 400) { calc_digit(3); return; }
+    if (mx >= 280 && mx < 350 && my >= 340 && my < 400) { calc_op(43); return; }
+
+    if (mx >= 10 && mx < 90 && my >= 410 && my < 470) { calc_sign(); return; }
+    if (mx >= 100 && mx < 180 && my >= 410 && my < 470) { calc_digit(0); return; }
+    if (mx >= 190 && mx < 270 && my >= 410 && my < 470) { calc_dot(); return; }
+    if (mx >= 280 && mx < 350 && my >= 410 && my < 470) { calc_equal(); return; }
+}
+
+func handle_key(ch: int) {
+    if (ch >= 48 && ch <= 57) { calc_digit(ch - 48); return; }
+    if (ch == 46) { calc_dot(); return; }
+    if (ch == 43) { calc_op(43); return; }
+    if (ch == 45) { calc_op(45); return; }
+    if (ch == 42) { calc_op(42); return; }
+    if (ch == 47) { calc_op(47); return; }
+    if (ch == 61) { calc_equal(); return; }
+    if (ch == 60) { calc_backspace(); return; }
+    if (ch == 99) { calc_reset(); return; }
+    if (ch == 67) { calc_reset(); return; }
+}
+
+func main() {
+    let win: int = open_linux_window("Jau Calculator");
+    if (win != 0) {
+        print("Failed to open window");
+        return 1;
+    }
+    let running: int = 1;
+    while (running == 1) {
+        let ev: int = poll_window_event();
+        if (ev == 4) {
+            draw_all();
+        }
+        if (ev == 2) {
+            handle_click(get_event_x(), get_event_y());
+            draw_all();
+        }
+        if (ev == 5) {
+            handle_key(get_event_char());
+            draw_all();
+        }
+        if (ev == 1) {
+            running = 0;
+        }
+        if (ev == 3) {
+            running = 0;
+        }
+    }
+    close_linux_window();
+    print("Calculator Is Worked!!! In Linux");
+    return 0;
+}
